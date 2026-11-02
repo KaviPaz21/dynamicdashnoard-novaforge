@@ -1,0 +1,13 @@
+.vscode/
+.DS_Store
+*.log
+
+# secrets: never commit credentials, whatever the folder or suffix (templates stay tracked)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+secrets/

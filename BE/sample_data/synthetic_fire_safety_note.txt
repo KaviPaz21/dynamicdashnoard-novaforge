@@ -1,0 +1,23 @@
+SYNTHETIC DEMO DOCUMENT - not an actual NASA publication.
+
+Spacecraft Fire Safety: Summary of Microgravity Flame Behaviour
+
+Abstract. In microgravity there is no buoyant convection, so flames are spherical or
+dome-shaped and sustained only by diffusion of oxygen. This changes ignition,
+spread and extinction relative to flames on Earth. Low oxygen concentrations that
+would extinguish a flame quickly on Earth can allow a slow, smouldering flame to
+persist in microgravity for longer than expected.
+
+Key finding 1. Flame spread rate over thin solid fuels depends strongly on the
+oxygen concentration and on the ambient flow velocity. In quiescent microgravity
+flames can spread more slowly than at 1 g, yet they extinguish at lower oxygen
+levels, which narrows the margin used to define material flammability limits.
+
+Key finding 2. Soot production is generally higher for gaseous and liquid fuels in
+microgravity because residence times in the flame zone are longer. Higher soot
+loading increases radiative heat loss and the toxic hazard to the crew.
+
+Implications for Moon and Mars missions. Lunar (0.16 g) and Martian (0.38 g)
+gravity create partial buoyancy, so test data at partial gravity is needed to
+interpolate between 0 g and 1 g. Crew safety standards should use oxygen
+concentration limits validated at the gravity level of the destination.

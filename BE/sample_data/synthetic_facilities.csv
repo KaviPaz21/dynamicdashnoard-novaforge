@@ -1,0 +1,6 @@
+platform,country,latitude,longitude,max_duration_s
+ISS,USA,28.57,-80.65,1000000
+Drop Tower,USA,41.41,-81.86,5
+Parabolic Flight,USA,29.55,-95.09,22
+Sounding Rocket,USA,37.94,-75.46,360
+Bremen Drop Tower,Germany,53.1,8.85,4

@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# secrets: .env, .env.local, .env.production ... (the template stays tracked)
+.env
+.env.*
+!.env.example
