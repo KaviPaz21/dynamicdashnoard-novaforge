@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from app.security.deps import current_user
 from app.services import geo
 
-router = APIRouter(tags=["geo"])
+router = APIRouter(tags=["geo"], dependencies=[Depends(current_user)])
 
 
 class GeoItem(BaseModel):

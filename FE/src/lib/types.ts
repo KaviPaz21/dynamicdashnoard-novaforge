@@ -1,4 +1,4 @@
-export type ColumnType = "string" | "integer" | "float" | "boolean" | "date" | "datetime";
+﻿export type ColumnType = "string" | "integer" | "float" | "boolean" | "date" | "datetime";
 export type ColumnRole =
   | "dimension" | "measure" | "date" | "geo_lat" | "geo_lon" | "geo_country" | "geo_state" | "geo_city" | "id" | "text";
 
@@ -29,7 +29,7 @@ export interface SourceDoc {
   kind: "tabular" | "text";
   filename: string;
   name: string;
-  status: "processing" | "ready" | "failed";
+  status: "processing" | "ready" | "failed" | "deleting";
   stage: string;
   error: string | null;
   warnings: string[];
@@ -40,6 +40,90 @@ export interface SourceDoc {
   chunk_count: number;
   page_count: number;
   topics: string[];
+  visibility: "private" | "global";
+  owner_id: string | null;
+  owner_name: string;
+  conversation_id: string | null;
+  size_bytes: number;
+}
+
+export type Role = "admin" | "client";
+export type KbScope = "all" | "local" | "global";
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  active: boolean;
+  must_change_password: boolean;
+  created_at: string;
+  last_active: string | null;
+}
+export interface AuthSession {
+  token: string;
+  expires_at: string;
+  user: User;
+}
+export interface UsageStats {
+  prompts: number;
+  sessions: number;
+  tokens_in: number;
+  tokens_out: number;
+  tokens_total: number;
+  flagged: number;
+  uploads: number;
+}
+export interface UserDetail extends User {
+  last_login: string | null;
+  usage: UsageStats;
+  conversations: number;
+  sheets: number;
+  private_sources: number;
+  flags_total: number;
+  flags_unreviewed: number;
+}
+export interface Flag {
+  id: string;
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  conversation_id: string;
+  created_at: string;
+  prompt: string;
+  response: string;
+  categories: string[];
+  severity: "low" | "medium" | "high";
+  reason: string;
+  blocked: boolean;
+  detection: string;
+  reviewed: boolean;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+}
+export interface FlaggedUser {
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  total: number;
+  unreviewed: number;
+  last_at: string;
+  severity: "low" | "medium" | "high";
+}
+
+export interface TraceEvent {
+  kind: "guard" | "select" | "thought" | "query" | "retry" | "retrieval" | "info";
+  node: string;
+  title: string;
+  detail?: string | null;
+  data?: Record<string, unknown>;
+  ts: number;
+}
+export interface ChatSessionInfo {
+  id: string;
+  title: string;
+  updated_at: string | null;
+  messages: number;
 }
 
 export type FilterOp = "eq" | "neq" | "in" | "not_in" | "gt" | "gte" | "lt" | "lte" | "between" | "contains";
@@ -179,16 +263,19 @@ export interface ChatResponse {
   remove_widget_ids: string[];
   citations: Citation[];
   suggestions: string[];
+  blocked?: boolean;
+  trace?: TraceEvent[];
+  title?: string | null;
 }
 export interface ChatRequest {
   message: string;
   conversation_id?: string | null;
   dashboard?: Dashboard | null;
   filters: ActiveFilter[];
-  source_ids: string[];
+  kb_scope: KbScope;
+  attachment_ids: string[];
 }
 export interface Health {
-  status: string;
   store: "cosmos" | "memory";
   llm_configured: boolean;
   llm_model: string;
@@ -196,6 +283,8 @@ export interface Health {
 }
 export type StreamEvent =
   | { event: "start"; data: { conversation_id: string } }
-  | { event: "step"; data: { node: string; detail: string } }
+  | { event: "step"; data: { node: string } }
+  | { event: "trace"; data: TraceEvent }
+  | { event: "title"; data: { id: string; title: string } }
   | { event: "final"; data: ChatResponse }
   | { event: "error"; data: { message: string; status?: number } };

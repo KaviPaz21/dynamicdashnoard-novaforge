@@ -6,7 +6,9 @@ import { useApp } from "@/store/useApp";
 
 const ACCEPT = ".csv,.tsv,.xlsx,.xlsm,.xls,.json,.jsonl,.pdf,.txt,.md,.docx";
 
-export function Dropzone({ compact = false, onDone }: { compact?: boolean; onDone?: () => void }) {
+export function Dropzone({
+  compact = false, visibility = "private", onDone,
+}: { compact?: boolean; visibility?: "private" | "global"; onDone?: () => void }) {
   const upload = useApp((s) => s.upload);
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
@@ -18,7 +20,7 @@ export function Dropzone({ compact = false, onDone }: { compact?: boolean; onDon
     setBusy(true);
     setProblems([]);
     try {
-      const { rejected } = await upload([...list]);
+      const { rejected } = await upload([...list], visibility);
       setProblems(rejected.map((r) => `${r.filename}: ${r.error}`));
       onDone?.();
     } catch (e) {

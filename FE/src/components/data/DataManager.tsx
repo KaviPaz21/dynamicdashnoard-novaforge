@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { formatValue } from "@/lib/format";
 import type { ColumnRole, Row, SourceDoc } from "@/lib/types";
 import { useApp } from "@/store/useApp";
+import { useToasts } from "@/store/useToasts";
 import { Dropzone } from "./Dropzone";
 
 const ROLE_DOT: Record<ColumnRole, string> = {
@@ -14,7 +15,12 @@ const ROLE_DOT: Record<ColumnRole, string> = {
   id: "var(--mute)", text: "var(--mute)",
 };
 
+export const fmtBytes = (n: number) =>
+  n >= 1_048_576 ? `${(n / 1_048_576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`;
+
 function StatusBadge({ s }: { s: SourceDoc }) {
+  if (s.status === "deleting")
+    return <span className="inline-flex items-center gap-1.5 text-xs text-mute"><Icon name="spinner" size={13} className="animate-spin" /> Deleting…</span>;
   if (s.status === "ready")
     return <span className="inline-flex items-center gap-1 text-xs text-good"><Icon name="check-circle" size={13} /> Ready</span>;
   if (s.status === "failed")
@@ -26,7 +32,7 @@ function StatusBadge({ s }: { s: SourceDoc }) {
   );
 }
 
-function SourceCard({ s }: { s: SourceDoc }) {
+export function SourceCard({ s, readOnly = false }: { s: SourceDoc; readOnly?: boolean }) {
   const removeSource = useApp((st) => st.removeSource);
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<{ columns: string[]; rows: Row[] } | null>(null);
@@ -44,8 +50,16 @@ function SourceCard({ s }: { s: SourceDoc }) {
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h3 className="truncate font-display text-base font-semibold">{s.name || s.filename}</h3>
             <StatusBadge s={s} />
+            {s.conversation_id && (
+              <span className="inline-flex items-center gap-1 rounded bg-accent/12 px-1.5 py-0.5 text-[11px] text-accent" title="Uploaded from a chat">
+                <Icon name="paperclip-vertical" size={10} /> chat attachment
+              </span>
+            )}
           </div>
-          <p className="truncate font-mono text-[11px] text-mute">{s.filename}</p>
+          <p className="truncate font-mono text-[11px] text-mute">
+            {s.filename}{s.size_bytes ? ` · ${fmtBytes(s.size_bytes)}` : ""}
+            {readOnly && s.owner_name ? ` · added by ${s.visibility === "global" ? s.owner_name : "you"}` : ""}
+          </p>
           {s.description && <p className="mt-2 line-clamp-3 text-[13px] leading-relaxed text-ink2">{s.description}</p>}
           {s.error && <p className="mt-2 text-xs text-crit">{s.error}</p>}
           {s.warnings.map((w) => <p key={w} className="mt-1 text-xs text-warn">⚠ {w}</p>)}
@@ -73,10 +87,12 @@ function SourceCard({ s }: { s: SourceDoc }) {
               Schema <Icon name="angle-small-down" size={13} className={`transition ${open ? "rotate-180" : ""}`} />
             </button>
           )}
-          <button onClick={() => confirm(`Delete "${s.name || s.filename}" and its data?`) && removeSource(s.id)}
-            className="rounded-md p-1.5 text-mute hover:bg-crit/15 hover:text-crit" title="Delete source" aria-label="Delete source">
-            <Icon name="trash" size={15} />
-          </button>
+          {!readOnly && s.status !== "deleting" && (
+            <button onClick={() => confirm(`Delete "${s.name || s.filename}" and its data? Visuals built on it are removed from your sheets.`) && removeSource(s.id)}
+              className="rounded-md p-1.5 text-mute hover:bg-crit/15 hover:text-crit" title="Delete source" aria-label="Delete source">
+              <Icon name="trash" size={15} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -125,11 +141,14 @@ function SourceCard({ s }: { s: SourceDoc }) {
   );
 }
 
-function Relationships() {
+function Relationships({ scope }: { scope: "private" | "global" }) {
   const sources = useApp((s) => s.sources);
-  const rels = useApp((s) => s.relationships);
+  const allRels = useApp((s) => s.relationships);
   const refresh = useApp((s) => s.refreshSources);
   const name = (id: string) => sources.find((s) => s.id === id)?.name ?? id;
+  const shown = new Set(sources.filter((s) => s.visibility === scope).map((s) => s.id));
+  // private view: links touching your own tables; global view: links between global tables only
+  const rels = allRels.filter((r) => (scope === "global" ? shown.has(r.from_source) && shown.has(r.to_source) : shown.has(r.from_source) || shown.has(r.to_source)));
   if (!rels.length) return null;
   return (
     <section className="card-surface rounded-[18px] p-4">
@@ -143,7 +162,10 @@ function Relationships() {
               <b className="font-medium">{name(r.to_source)}</b><span className="font-mono text-xs text-ink2">.{r.to_column}</span></span>
             <span className="rounded bg-ink/5 px-1.5 py-0.5 text-[10px] text-mute uppercase">{r.kind}</span>
             <button className="rounded p-1 text-mute hover:text-crit" aria-label="Remove relationship"
-              onClick={async () => { await api.saveRelationships(rels.filter((x) => x.id !== r.id)); refresh(); }}>
+              onClick={async () => {
+                try { await api.saveRelationships(allRels.filter((x) => x.id !== r.id)); } catch (e) { useToasts.getState().push(e instanceof Error ? e.message : "Could not remove the relationship", "error"); }
+                refresh();
+              }}>
               <Icon name="trash" size={13} />
             </button>
           </li>
@@ -153,22 +175,30 @@ function Relationships() {
   );
 }
 
-export function DataManager() {
-  const sources = useApp((s) => s.sources);
+/** Manage one knowledge base: "private" = the signed-in user's local knowledge, "global" = shared with everyone (admins only). */
+export function DataManager({ scope = "private", embedded = false }: { scope?: "private" | "global"; embedded?: boolean }) {
+  const all = useApp((s) => s.sources);
+  const sources = all.filter((s) => s.visibility === scope);
+  const global = scope === "global";
   return (
-    <div className="mx-auto max-w-4xl space-y-4 py-6">
+    <div className={embedded ? "space-y-4" : "mx-auto max-w-4xl space-y-4 py-6"}>
       <div>
-        <h2 className="font-display text-2xl font-semibold tracking-tight">Data</h2>
+        <h2 className="flex items-center gap-2 font-display text-2xl font-semibold tracking-tight">
+          <Icon name={global ? "globe" : "lock"} size={20} className="text-accent" />
+          {global ? "Global knowledge" : "Local knowledge"}
+        </h2>
         <p className="mt-1 text-sm text-ink2">
-          Upload tables and research papers. The ingestion agent decides what to do: tables are profiled and stored as
-          queryable collections; documents are chunked and embedded for retrieval.
+          {global
+            ? "Files added here are visible to every user and are used by the copilot for everyone (unless they choose local only). "
+            : "Only you can see these files. "}
+          Tables are profiled and stored as queryable collections; documents are chunked and embedded for retrieval.
         </p>
       </div>
-      <Dropzone />
-      <Relationships />
+      <Dropzone visibility={scope} />
+      <Relationships scope={scope} />
       <div className="space-y-3">
         {sources.map((s) => <SourceCard key={s.id} s={s} />)}
-        {!sources.length && <p className="py-6 text-center text-sm text-mute">No data yet.</p>}
+        {!sources.length && <p className="py-6 text-center text-sm text-mute">{global ? "No global knowledge yet." : "No data yet."}</p>}
       </div>
     </div>
   );

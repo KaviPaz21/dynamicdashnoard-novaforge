@@ -2,16 +2,14 @@
 
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { api } from "@/lib/api";
+import { api, ApiError, type StoredMessage } from "@/lib/api";
 import type { ThemeName } from "@/lib/palette";
 import type {
-  ActiveFilter, ChatResponse, Citation, Dashboard, Health, Layout, Relationship, SheetInfo, SourceDoc, Widget,
+  ActiveFilter, ChatResponse, ChatSessionInfo, Citation, Dashboard, Health, KbScope, Layout, Relationship, SheetInfo,
+  SourceDoc, TraceEvent, Widget,
 } from "@/lib/types";
+import { useToasts } from "./useToasts";
 
-export interface Step {
-  node: string;
-  detail: string;
-}
 export interface Message {
   id: string;
   role: "user" | "assistant";
@@ -19,27 +17,35 @@ export interface Message {
   citations?: Citation[];
   suggestions?: string[];
   intent?: string;
-  steps?: Step[];
+  trace?: TraceEvent[];
+  blocked?: boolean;
+  attachments?: string[];
   error?: boolean;
 }
 
-export type Tab = "dashboard" | "data";
+export type Tab = "dashboard" | "data" | "knowledge";
 export type SaveState = "idle" | "saving" | "saved" | "error";
 
 const THEME_KEY = "novaforge-theme";
+const SESSION_KEY = "novaforge-session";
 
 interface AppState {
+  ownerId: string | null;
   tab: Tab;
   theme: ThemeName;
   sidebarCollapsed: boolean;
   chatOpen: boolean;
   chatExpanded: boolean;
+  sessionsOpen: boolean;
   unread: boolean;
   setChatOpen: (open: boolean) => void;
   toggleChatExpanded: () => void;
+  toggleSessions: () => void;
   setTheme: (t: ThemeName) => void;
   initTheme: () => void;
   toggleSidebar: () => void;
+  adoptOwner: (userId: string) => void;
+  reset: () => void;
   health: Health | null;
   sources: SourceDoc[];
   relationships: Relationship[];
@@ -54,14 +60,17 @@ interface AppState {
   filters: ActiveFilter[];
   messages: Message[];
   conversationId: string | null;
+  sessions: ChatSessionInfo[];
+  kbScope: KbScope;
   busy: boolean;
-  steps: Step[];
+  trace: TraceEvent[];
   expandedWidgetId: string | null;
 
   setTab: (t: Tab) => void;
   refreshSources: () => Promise<void>;
   refreshHealth: () => Promise<void>;
-  upload: (files: File[]) => Promise<{ rejected: { filename: string; error: string }[] }>;
+  upload: (files: File[], visibility?: "private" | "global") => Promise<{ rejected: { filename: string; error: string }[] }>;
+  attach: (files: File[]) => Promise<{ rejected: { filename: string; error: string }[] }>;
   removeSource: (id: string) => Promise<void>;
 
   loadSheets: () => Promise<void>;
@@ -73,6 +82,11 @@ interface AppState {
 
   send: (text: string) => Promise<void>;
   newConversation: () => void;
+  setKbScope: (s: KbScope) => void;
+  loadSessions: () => Promise<void>;
+  openConversation: (id: string) => Promise<void>;
+  deleteConversation: (id: string) => Promise<void>;
+  exportConversation: () => Promise<void>;
 
   setFilter: (f: ActiveFilter) => void;
   toggleValue: (f: Omit<ActiveFilter, "op" | "value"> & { value: unknown }) => void;
@@ -87,8 +101,11 @@ interface AppState {
 }
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+const newConvId = () => crypto.randomUUID().replaceAll("-", "");
 const EMPTY: Dashboard = { title: "", widgets: [] };
 const AUTO_NAME = /^(sheet|untitled|dashboard)\s*\d*$/i;
+
+const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function applyResponse(dash: Dashboard, res: ChatResponse): Dashboard {
   let widgets = [...dash.widgets];
@@ -107,17 +124,47 @@ function applyResponse(dash: Dashboard, res: ChatResponse): Dashboard {
 
 const sameLayout = (a: Layout, b: Layout) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
 
+const fromStored = (m: StoredMessage): Message => ({
+  id: uid(), role: m.role, content: m.content, citations: m.citations, suggestions: m.suggestions, intent: m.intent,
+  trace: m.trace, blocked: m.blocked, attachments: m.attachments,
+});
+
+/** Everything that belongs to one signed-in person and must never be shown to the next one. */
+const PER_USER = {
+  tab: "dashboard" as Tab,
+  chatOpen: false,
+  sessionsOpen: false,
+  unread: false,
+  health: null,
+  sources: [] as SourceDoc[],
+  relationships: [] as Relationship[],
+  sheets: [] as SheetInfo[],
+  activeSheetId: null as string | null,
+  dashboard: EMPTY,
+  dirty: false,
+  saveState: "idle" as SaveState,
+  savedAt: null as number | null,
+  filters: [] as ActiveFilter[],
+  messages: [] as Message[],
+  conversationId: null as string | null,
+  sessions: [] as ChatSessionInfo[],
+  kbScope: "all" as KbScope,
+  busy: false,
+  trace: [] as TraceEvent[],
+  expandedWidgetId: null as string | null,
+};
+
 export const useApp = create<AppState>()(
   persist(
     (set, get) => ({
-      tab: "dashboard",
+      ...PER_USER,
+      ownerId: null,
       theme: "light",
       sidebarCollapsed: false,
-      chatOpen: false,
       chatExpanded: false,
-      unread: false,
       setChatOpen: (chatOpen) => set(chatOpen ? { chatOpen, unread: false } : { chatOpen }),
       toggleChatExpanded: () => set((s) => ({ chatExpanded: !s.chatExpanded })),
+      toggleSessions: () => set((s) => ({ sessionsOpen: !s.sessionsOpen })),
       setTheme: (theme) => {
         try {
           document.documentElement.dataset.theme = theme;
@@ -130,27 +177,25 @@ export const useApp = create<AppState>()(
         if (t === "light" || t === "dark") set({ theme: t });
       },
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
-      health: null,
-      sources: [],
-      relationships: [],
-      sheets: [],
-      activeSheetId: null,
-      dashboard: EMPTY,
-      dirty: false,
-      saveState: "idle",
-      savedAt: null,
-      filters: [],
-      messages: [],
-      conversationId: null,
-      busy: false,
-      steps: [],
-      expandedWidgetId: null,
+
+      adoptOwner: (userId) => {
+        if (get().ownerId !== userId) {
+          get().reset(); // a different person used this browser last: start clean
+          set({ ownerId: userId });
+        }
+      },
+      reset: () => {
+        try {
+          localStorage.removeItem(SESSION_KEY);
+        } catch {}
+        set({ ...PER_USER, ownerId: null });
+      },
 
       setTab: (tab) => set({ tab }),
 
       refreshHealth: async () => {
         try {
-          set({ health: await api.health() });
+          set({ health: await api.system() });
         } catch {
           set({ health: null });
         }
@@ -163,17 +208,32 @@ export const useApp = create<AppState>()(
         } catch {}
       },
 
-      upload: async (files) => {
-        const res = await api.upload(files);
+      upload: async (files, visibility = "private") => {
+        const res = await api.upload(files, { visibility });
+        await get().refreshSources();
+        return { rejected: res.rejected };
+      },
+
+      attach: async (files) => {
+        const conversationId = get().conversationId ?? newConvId();
+        set({ conversationId });
+        const res = await api.upload(files, { conversationId });
         await get().refreshSources();
         return { rejected: res.rejected };
       },
 
       removeSource: async (id) => {
-        await api.deleteSource(id);
+        try {
+          await api.deleteSource(id);
+        } catch (e) {
+          useToasts.getState().push(`Could not delete: ${errText(e)}`, "error");
+          await get().refreshSources();
+          return;
+        }
         set((s) => ({
+          sources: s.sources.filter((x) => x.id !== id),
           filters: s.filters.filter((f) => f.source_id !== id),
-          dirty: true,
+          dirty: s.activeSheetId ? true : s.dirty,
           dashboard: {
             ...s.dashboard,
             widgets: s.dashboard.widgets.filter((w) => w.source_id !== id && w.query?.source_id !== id),
@@ -239,7 +299,12 @@ export const useApp = create<AppState>()(
       },
 
       deleteSheet: async (id) => {
-        await api.deleteSheet(id);
+        try {
+          await api.deleteSheet(id);
+        } catch (e) {
+          useToasts.getState().push(`Could not delete the sheet: ${errText(e)}`, "error");
+          return;
+        }
         const rest = get().sheets.filter((s) => s.id !== id);
         set({ sheets: rest });
         if (get().activeSheetId === id) {
@@ -269,29 +334,92 @@ export const useApp = create<AppState>()(
         }
       },
 
-      newConversation: () => set({ messages: [], conversationId: null, steps: [] }),
+      newConversation: () => set({ messages: [], conversationId: newConvId(), trace: [] }),
+      setKbScope: (kbScope) => set({ kbScope }),
+
+      loadSessions: async () => {
+        try {
+          set({ sessions: await api.conversations() });
+        } catch {}
+      },
+
+      openConversation: async (id) => {
+        if (get().busy) return;
+        try {
+          const conv = await api.conversation(id);
+          set({ conversationId: conv.id, messages: conv.messages.map(fromStored), trace: [] });
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 404) {
+            // not saved yet (a chat that only has attachments so far) or deleted elsewhere: keep the id, show it empty
+            set((s) => ({ sessions: s.sessions.filter((x) => x.id !== id), messages: s.conversationId === id ? [] : s.messages }));
+          } else useToasts.getState().push(`Could not open the chat: ${errText(e)}`, "error");
+        }
+      },
+
+      deleteConversation: async (id) => {
+        try {
+          await api.deleteConversation(id);
+        } catch (e) {
+          if (!(e instanceof ApiError && e.status === 404)) {
+            useToasts.getState().push(`Could not delete the chat: ${errText(e)}`, "error");
+            return;
+          }
+        }
+        set((s) => ({ sessions: s.sessions.filter((x) => x.id !== id) }));
+        if (get().conversationId === id) get().newConversation();
+      },
+
+      exportConversation: async () => {
+        const { conversationId, messages } = get();
+        if (!conversationId || !messages.length) return;
+        try {
+          const { blob, filename } = await api.exportConversation(conversationId);
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          document.body.append(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 10_000);
+        } catch (e) {
+          useToasts.getState().push(`Export failed: ${errText(e)}`, "error");
+        }
+      },
 
       send: async (text) => {
         const state = get();
         if (!text.trim() || state.busy) return;
-        const userMsg: Message = { id: uid(), role: "user", content: text.trim() };
-        set({ messages: [...state.messages, userMsg], busy: true, steps: [], chatOpen: true, unread: false });
-        const steps: Step[] = [];
+        const conversationId = state.conversationId ?? newConvId();
+        const attachments = state.sources.filter((s) => s.conversation_id === conversationId && s.status === "ready");
+        const userMsg: Message = {
+          id: uid(), role: "user", content: text.trim(), attachments: attachments.map((s) => s.name || s.filename),
+        };
+        set({ messages: [...state.messages, userMsg], conversationId, busy: true, trace: [], chatOpen: true, unread: false });
+        const trace: TraceEvent[] = [];
         try {
           let final: ChatResponse | null = null;
           let failure: string | null = null;
           await api.chatStream(
             {
               message: userMsg.content,
-              conversation_id: state.conversationId,
+              conversation_id: conversationId,
               dashboard: { title: state.dashboard.title, widgets: state.dashboard.widgets.map((w) => ({ ...w, data: undefined, trend_data: undefined })) },
               filters: state.filters,
-              source_ids: [],
+              kb_scope: state.kbScope,
+              attachment_ids: attachments.map((s) => s.id),
             },
             (e) => {
-              if (e.event === "step") {
-                steps.push(e.data);
-                set({ steps: [...steps] });
+              if (e.event === "trace") {
+                trace.push(e.data);
+                set({ trace: [...trace] });
+              } else if (e.event === "title") {
+                const t = e.data;
+                set((s) => ({
+                  sessions: s.sessions.some((x) => x.id === t.id)
+                    ? s.sessions.map((x) => (x.id === t.id ? { ...x, title: t.title } : x))
+                    : [{ id: t.id, title: t.title, updated_at: new Date().toISOString(), messages: 0 }, ...s.sessions],
+                }));
               } else if (e.event === "final") final = e.data;
               else if (e.event === "error") failure = e.data.message;
             },
@@ -324,22 +452,28 @@ export const useApp = create<AppState>()(
             messages: [
               ...s.messages,
               {
-                id: uid(), role: "assistant", content: res.message, citations: res.citations,
-                suggestions: res.suggestions, intent: res.intent, steps,
+                id: uid(), role: "assistant", content: res.message, citations: res.citations, suggestions: res.suggestions,
+                intent: res.intent, trace: res.trace?.length ? res.trace : trace, blocked: res.blocked,
               },
+            ],
+            sessions: [
+              {
+                id: res.conversation_id,
+                title: res.title || s.sessions.find((x) => x.id === res.conversation_id)?.title || "New chat",
+                updated_at: new Date().toISOString(),
+                messages: s.messages.length + 1,
+              },
+              ...s.sessions.filter((x) => x.id !== res.conversation_id),
             ],
             tab: res.widgets.length ? "dashboard" : s.tab,
             unread: !s.chatOpen,
           }));
         } catch (e) {
           set((s) => ({
-            messages: [
-              ...s.messages,
-              { id: uid(), role: "assistant", content: e instanceof Error ? e.message : String(e), error: true },
-            ],
+            messages: [...s.messages, { id: uid(), role: "assistant", content: errText(e), error: true }],
           }));
         } finally {
-          set({ busy: false, steps: [] });
+          set({ busy: false, trace: [] });
         }
       },
 
@@ -409,8 +543,8 @@ export const useApp = create<AppState>()(
       expandWidget: (id) => set({ expandedWidgetId: id }),
     }),
     {
-      name: "novaforge-session",
-      version: 2,
+      name: SESSION_KEY,
+      version: 3,
       storage: createJSONStorage(() => ({
         getItem: (k) => {
           try { return localStorage.getItem(k); } catch { return null; }
@@ -423,13 +557,16 @@ export const useApp = create<AppState>()(
         },
       })),
       skipHydration: true,
+      // only UI preferences and ids: chats and sheets are always loaded from the server for the signed-in user
       partialize: (s) => ({
+        ownerId: s.ownerId,
         sidebarCollapsed: s.sidebarCollapsed,
         chatOpen: s.chatOpen,
         chatExpanded: s.chatExpanded,
+        sessionsOpen: s.sessionsOpen,
         activeSheetId: s.activeSheetId,
         conversationId: s.conversationId,
-        messages: s.messages.slice(-40).map((m) => ({ ...m, steps: undefined })),
+        kbScope: s.kbScope,
       }),
     },
   ),

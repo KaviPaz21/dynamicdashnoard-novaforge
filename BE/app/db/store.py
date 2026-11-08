@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
@@ -17,6 +17,8 @@ CONTAINERS: dict[str, str] = {
     "conversations": "/id",
     "meta": "/id",
     "dashboards": "/id",
+    "users": "/id",
+    "flags": "/id",
 }
 SYSTEM_KEYS = {"_rid", "_self", "_etag", "_attachments", "_ts"}
 
@@ -41,6 +43,13 @@ class Store(ABC):
     async def delete(self, container: str, doc_id: str) -> None: ...
     @abstractmethod
     async def list_all(self, container: str) -> list[dict[str, Any]]: ...
+    @abstractmethod
+    async def query(self, container: str, **equals: Any) -> list[dict[str, Any]]:
+        """Documents whose top-level fields equal every given value."""
+
+    @abstractmethod
+    async def data_source_ids(self) -> set[str]:
+        """Every source_id that still owns row or chunk documents (to sweep orphans)."""
 
     @abstractmethod
     async def insert_rows(
@@ -82,6 +91,12 @@ class MemoryStore(Store):
 
     async def list_all(self, container):
         return [dict(d) for d in self.docs[container].values()]
+
+    async def query(self, container, **equals):
+        return [dict(d) for d in self.docs[container].values() if all(d.get(k) == v for k, v in equals.items())]
+
+    async def data_source_ids(self):
+        return set(self.rows) | set(self.chunks)
 
     async def insert_rows(self, source_id, rows, progress=None):
         self.rows.setdefault(source_id, []).extend(rows)
@@ -226,6 +241,22 @@ class CosmosStore(Store):
 
     async def list_all(self, container):
         return [clean(d) async for d in self.containers[container].query_items("SELECT * FROM c")]
+
+    async def query(self, container, **equals):
+        where = " AND ".join(f"c.{k} = @{k}" for k in equals) or "true"
+        params = [{"name": f"@{k}", "value": v} for k, v in equals.items()]
+        return [
+            clean(d)
+            async for d in self.containers[container].query_items(f"SELECT * FROM c WHERE {where}", parameters=params)
+        ]
+
+    async def data_source_ids(self):
+        found: set[str] = set()
+        for name in ("rows", "chunks"):
+            found.update(
+                [i async for i in self.containers[name].query_items("SELECT DISTINCT VALUE c.source_id FROM c")]
+            )
+        return found
 
     async def insert_rows(self, source_id, rows, progress=None):
         container = self.containers["rows"]

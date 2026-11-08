@@ -147,11 +147,17 @@ export function Header() {
     <header className="px-3 pt-1 pb-3">
       {tab === "dashboard" ? (
         <SheetHeader />
-      ) : (
+      ) : tab === "data" ? (
         <div>
           <div className="font-mono text-[10px] tracking-[0.14em] text-mute uppercase">Library</div>
           <h1 className="font-display text-xl leading-tight font-semibold tracking-tight">Data</h1>
-          <p className="mt-0.5 text-xs text-mute">Tables become queryable collections; documents become a searchable knowledge base.</p>
+          <p className="mt-0.5 text-xs text-mute">Your local knowledge: tables and documents only you can see and the copilot can use for you.</p>
+        </div>
+      ) : (
+        <div>
+          <div className="font-mono text-[10px] tracking-[0.14em] text-mute uppercase">Library</div>
+          <h1 className="font-display text-xl leading-tight font-semibold tracking-tight">Knowledge</h1>
+          <p className="mt-0.5 text-xs text-mute">Everything the copilot can draw on: your private knowledge and the global knowledge shared with everyone.</p>
         </div>
       )}
     </header>

@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -42,6 +43,25 @@ class Settings(BaseSettings):
     rag_top_k: int = 6
 
     domain_context: str = ""
+
+    # --- auth ---------------------------------------------------------------
+    jwt_secret: str = ""
+    jwt_ttl_minutes: int = 480
+    login_max_failures: int = 5
+    login_lock_seconds: int = 900
+    admin_name: str = "Administrator"
+    admin_email: str = ""
+    admin_password: str = ""
+
+    # --- encrypted transport (ECDH P-256 + HKDF + AES-256-GCM) -----------------
+    # required = every API call must go through POST /api/secure/call; optional = plaintext also accepted; off = disabled
+    secure_transport: Literal["required", "optional", "off"] = "required"
+    secure_signing_key: str = ""  # base64 PKCS8 DER of the server's long-term ECDSA P-256 key
+    secure_session_minutes: int = 720
+    secure_clock_skew_seconds: int = 300
+
+    # --- chat safety ----------------------------------------------------------------
+    guard_enabled: bool = True
 
     @field_validator("llm_temperature", mode="before")
     @classmethod

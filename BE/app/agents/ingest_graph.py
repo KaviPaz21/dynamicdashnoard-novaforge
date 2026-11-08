@@ -84,7 +84,7 @@ async def parse_tables(state: IngestState) -> IngestState:
             doc = base
             doc.name = name
         else:
-            doc = SourceDoc(id=uuid.uuid4().hex, kind="tabular", filename=state["filename"], name=name)
+            doc = base.model_copy(deep=True, update={"id": uuid.uuid4().hex, "name": name})  # same owner/visibility
             await _save(store, doc, stage="parsing tables")
         tables.append({"doc": doc, "df": df})
     return {"tables": tables}
@@ -162,7 +162,12 @@ async def store_tables(state: IngestState) -> IngestState:
         await store.insert_rows(doc.id, records, progress)
         await _save(store, doc, status="ready", stage="ready")
 
-        sources = [SourceDoc(**d) for d in await store.list_all("sources")]
+        # Only relate to tables the owner can also see: a global table never links to someone's private one
+        sources = [
+            s
+            for s in (SourceDoc(**d) for d in await store.list_all("sources"))
+            if s.visibility == "global" or (doc.visibility == "private" and s.owner_id == doc.owner_id)
+        ]
         rels = await load_relationships(store)
         found = detect_relationships(doc, sources, rels)
         if found:
@@ -267,6 +272,6 @@ async def run_ingest(source_id: str, filename: str, data: bytes) -> None:
         if raw:
             doc = SourceDoc(**raw)
             await _save(store, doc, status="failed", stage="failed", error=str(e)[:500])
-        for d in await store.list_all("sources"):
-            if d["filename"] == filename and d["status"] == "processing":
+            # extra sheets of the same workbook that were still being processed
+            for d in await store.query("sources", filename=filename, status="processing", owner_id=doc.owner_id):
                 await _save(store, SourceDoc(**d), status="failed", stage="failed", error=str(e)[:500])

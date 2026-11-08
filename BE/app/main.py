@@ -3,13 +3,16 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app import bootstrap
 from app.config import get_settings
 from app.db.store import close_store, get_store
-from app.routers import chat, dashboards, geo, query, sources
-from app.schemas import SourceDoc
+from app.routers import admin, auth, chat, dashboards, geo, query, secure, sources
+from app.schemas import SourceDoc, UserDoc
+from app.security.deps import current_user
+from app.security.transport import SecureTransportMiddleware
 from app.services.geo import ensure_geo
 
 
@@ -25,6 +28,7 @@ async def _backfill_geo() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await get_store()
+    await bootstrap.run()
     task = asyncio.create_task(_backfill_geo())
     yield
     task.cancel()
@@ -33,27 +37,37 @@ async def lifespan(_: FastAPI):
 
 def create_app() -> FastAPI:
     s = get_settings()
-    app = FastAPI(title="NovaForge API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(
+        title="NovaForge API", version="0.2.0", lifespan=lifespan,
+        docs_url=None, redoc_url=None, openapi_url=None,  # the API surface is not advertised
+    )
+    # Added first = innermost: CORS must wrap the transport so its headers reach the tunnel's own responses too
+    app.add_middleware(SecureTransportMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=s.cors_origin_list,
         allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["x-nf-err", "x-nf-enc"],
     )
 
     @app.get(f"{s.api_prefix}/health")
     async def health() -> dict:
+        return {"status": "ok", "secure_transport": get_settings().secure_transport}
+
+    @app.get(f"{s.api_prefix}/system")
+    async def system(_: UserDoc = Depends(current_user)) -> dict:
         store = await get_store()
+        cfg = get_settings()
         return {
-            "status": "ok",
             "store": store.backend,
-            "llm_configured": s.llm_configured,
-            "llm_model": s.llm_model,
-            "embeddings_configured": s.embeddings_configured,
+            "llm_configured": cfg.llm_configured,
+            "llm_model": cfg.llm_model,
+            "embeddings_configured": cfg.embeddings_configured,
         }
 
-    for r in (sources.router, query.router, chat.router, dashboards.router, geo.router):
+    for r in (secure.router, auth.router, admin.router, sources.router, query.router, chat.router, dashboards.router, geo.router):
         app.include_router(r, prefix=s.api_prefix)
     return app
 

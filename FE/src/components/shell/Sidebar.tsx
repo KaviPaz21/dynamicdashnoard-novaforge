@@ -1,7 +1,12 @@
-"use client";
+﻿"use client";
 
+import { useState } from "react";
+import { Logo, LogoMark } from "@/components/brand/Logo";
 import { Icon, type IconName } from "@/components/ui/Icon";
+import { useAdmin } from "@/store/useAdmin";
 import { useApp, type Tab } from "@/store/useApp";
+import { useAuth } from "@/store/useAuth";
+import { useToasts } from "@/store/useToasts";
 
 function relative(iso: string) {
   const d = new Date(iso);
@@ -17,6 +22,54 @@ function Dot({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
+function initials(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("") || "?";
+}
+
+function UserCard({ collapsed }: { collapsed: boolean }) {
+  const user = useAuth((s) => s.user);
+  const logout = useAuth((s) => s.logout);
+  const push = useToasts((s) => s.push);
+  if (!user) return null;
+
+  const copyId = async () => {
+    try {
+      await navigator.clipboard.writeText(user.id);
+      push("User ID copied");
+    } catch {}
+  };
+
+  if (collapsed)
+    return (
+      <div className="flex flex-col items-center gap-2">
+        <span className="grid h-9 w-9 place-items-center rounded-full bg-side-active font-mono text-xs font-semibold text-side-active-ink" title={`${user.name} · ${user.id}`}>
+          {initials(user.name)}
+        </span>
+        <button onClick={() => logout()} className="grid h-9 w-9 place-items-center rounded-xl text-side-ink transition hover:bg-white/15" aria-label="Sign out" title="Sign out">
+          <Icon name="sign-out-alt" size={17} />
+        </button>
+      </div>
+    );
+
+  return (
+    <div className="flex items-center gap-2.5 rounded-xl bg-black/15 p-2">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-side-active font-mono text-xs font-semibold text-side-active-ink" aria-hidden>
+        {initials(user.name)}
+      </span>
+      <div className="min-w-0 flex-1 leading-tight">
+        <div className="truncate text-[13px] font-medium" title={user.email}>{user.name}</div>
+        <button onClick={copyId} title="Copy your user ID" className="group flex max-w-full items-center gap-1 font-mono text-[10.5px] text-side-ink2 hover:text-side-ink">
+          <span className="truncate">{user.id}</span>
+          <Icon name="copy" size={10} className="shrink-0 opacity-0 transition group-hover:opacity-100" />
+        </button>
+      </div>
+      <button onClick={() => logout()} className="rounded-lg p-2 text-side-ink2 transition hover:bg-white/15 hover:text-side-ink" aria-label="Sign out" title="Sign out">
+        <Icon name="sign-out-alt" size={16} />
+      </button>
+    </div>
+  );
+}
+
 export function Sidebar() {
   const collapsed = useApp((s) => s.sidebarCollapsed);
   const toggleSidebar = useApp((s) => s.toggleSidebar);
@@ -27,10 +80,14 @@ export function Sidebar() {
   const openSheet = useApp((s) => s.openSheet);
   const createSheet = useApp((s) => s.createSheet);
   const deleteSheet = useApp((s) => s.deleteSheet);
-  const sourceCount = useApp((s) => s.sources.length);
+  const sourceCount = useApp((s) => s.sources.filter((x) => x.visibility === "private" && !x.conversation_id).length);
   const theme = useApp((s) => s.theme);
   const setTheme = useApp((s) => s.setTheme);
   const health = useApp((s) => s.health);
+  const isAdmin = useAuth((s) => s.user?.role === "admin");
+  const openAdmin = useAdmin((s) => s.openAdmin);
+  const alerts = useAdmin((s) => s.unreviewed);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const recent = [...sheets].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 
@@ -42,6 +99,7 @@ export function Sidebar() {
   const views: { id: Tab; label: string; icon: IconName; badge?: number }[] = [
     { id: "dashboard", label: "Dashboard", icon: "dashboard" },
     { id: "data", label: "Data", icon: "database", badge: sourceCount || undefined },
+    { id: "knowledge", label: "Knowledge", icon: "books" },
   ];
   const label = "px-3 pt-2 pb-1.5 font-mono text-[10px] tracking-[0.14em] text-side-ink2 uppercase";
 
@@ -50,16 +108,8 @@ export function Sidebar() {
       className={`side-panel flex shrink-0 flex-col rounded-[22px] transition-[width] duration-200 ${collapsed ? "w-[68px]" : "w-64"}`}
       aria-label="Navigation"
     >
-      <div className={`flex items-center gap-2.5 px-3 pt-4 pb-3 ${collapsed ? "flex-col" : ""}`}>
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-side-active text-side-active-ink" aria-hidden>
-          <Icon name="flame" size={19} />
-        </div>
-        {!collapsed && (
-          <div className="min-w-0 flex-1 leading-tight">
-            <div className="font-display text-xl font-semibold tracking-tight">NovaForge</div>
-            <div className="truncate font-mono text-[10px] tracking-[0.14em] text-side-ink2 uppercase">Fire-safety copilot</div>
-          </div>
-        )}
+      <div className={`flex items-center gap-2 px-3 pt-4 pb-3 ${collapsed ? "flex-col" : ""}`}>
+        {collapsed ? <LogoMark /> : <div className="min-w-0 flex-1"><Logo chip size={21} /></div>}
         <button
           onClick={toggleSidebar}
           className="rounded-lg p-1.5 text-side-ink2 transition hover:bg-white/15 hover:text-side-ink"
@@ -106,6 +156,7 @@ export function Sidebar() {
         <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto pb-2">
           {recent.map((s) => {
             const active = s.id === activeId && tab === "dashboard";
+            const confirming = confirmId === s.id;
             return (
               <li key={s.id} className="group/row relative">
                 <button onClick={() => openSheet(s.id)} className={item(active)} aria-current={active ? "page" : undefined} title={collapsed ? s.name : undefined}>
@@ -127,11 +178,19 @@ export function Sidebar() {
                 </button>
                 {!collapsed && (
                   <button
-                    onClick={() => confirm(`Delete sheet “${s.name}”?`) && deleteSheet(s.id)}
-                    className={`absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 opacity-0 transition group-hover/row:opacity-100 focus-visible:opacity-100 ${active ? "text-side-active-ink hover:bg-side-active-ink/10" : "text-side-ink2 hover:bg-white/15 hover:text-side-ink"}`}
-                    aria-label={`Delete ${s.name}`}
+                    onClick={() => {
+                      if (confirming) {
+                        setConfirmId(null);
+                        void deleteSheet(s.id);
+                      } else setConfirmId(s.id);
+                    }}
+                    onBlur={() => setConfirmId((c) => (c === s.id ? null : c))}
+                    className={`absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[11px] font-medium transition focus-visible:opacity-100 ${
+                      confirming ? "bg-crit px-1.5 text-white opacity-100" : `opacity-0 group-hover/row:opacity-100 ${active ? "text-side-active-ink hover:bg-side-active-ink/10" : "text-side-ink2 hover:bg-white/15 hover:text-side-ink"}`
+                    }`}
+                    aria-label={confirming ? `Confirm delete ${s.name}` : `Delete ${s.name}`}
                   >
-                    <Icon name="cross-small" size={13} />
+                    {confirming ? "Delete?" : <Icon name="cross-small" size={13} />}
                   </button>
                 )}
               </li>
@@ -144,6 +203,23 @@ export function Sidebar() {
       </div>
 
       <div className="space-y-3 border-t border-white/15 p-3">
+        {isAdmin && (
+          <button
+            onClick={() => openAdmin()}
+            className={`${item(false)} py-2.5!`} title={collapsed ? "Admin" : undefined} aria-haspopup="dialog"
+          >
+            <span className="relative">
+              <Icon name="shield-check" size={17} />
+              {collapsed && alerts > 0 && <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-[#ffd27a]" />}
+            </span>
+            {!collapsed && <span className="flex-1">Admin</span>}
+            {!collapsed && alerts > 0 && (
+              <span className="tabular rounded-full bg-[#ffd27a] px-1.5 font-mono text-[11px] font-semibold text-[#3a2a00]" title={`${alerts} flagged prompt${alerts === 1 ? "" : "s"} to review`}>
+                {alerts}
+              </span>
+            )}
+          </button>
+        )}
         {collapsed ? (
           <button
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -165,6 +241,7 @@ export function Sidebar() {
             ))}
           </div>
         )}
+        <UserCard collapsed={collapsed} />
         {!collapsed && (
           <div className="space-y-1 px-1">
             {health ? (
@@ -181,11 +258,6 @@ export function Sidebar() {
             >
               Icons by Flaticon UIcons
             </a>
-          </div>
-        )}
-        {collapsed && (
-          <div className="flex justify-center" title={health ? `${health.store} · ${health.llm_model}` : "API offline"}>
-            <span className={`h-2 w-2 rounded-full ${health && health.llm_configured ? "bg-[#7ee0cf]" : "bg-[#ffd27a]"}`} />
           </div>
         )}
       </div>

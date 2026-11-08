@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from contextvars import ContextVar
 from functools import lru_cache
 from typing import TypeVar
 from urllib.parse import urlsplit
 
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.messages import BaseMessage
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings, ChatOpenAI, OpenAIEmbeddings
 from pydantic import BaseModel
@@ -71,9 +73,27 @@ def get_embeddings() -> OpenAIEmbeddings:
     )
 
 
+_usage: ContextVar[UsageMetadataCallbackHandler | None] = ContextVar("llm_usage", default=None)
+
+
+def track_usage() -> UsageMetadataCallbackHandler:
+    """Start counting tokens for everything the current request does (LLM calls made from its tasks share the handler)."""
+    handler = UsageMetadataCallbackHandler()
+    _usage.set(handler)
+    return handler
+
+
+def usage_totals(handler: UsageMetadataCallbackHandler | None) -> tuple[int, int]:
+    if handler is None:
+        return 0, 0
+    models = handler.usage_metadata.values()
+    return sum(m.get("input_tokens", 0) for m in models), sum(m.get("output_tokens", 0) for m in models)
+
+
 async def structured(schema: type[T], messages: list[BaseMessage]) -> T:
     model = get_chat_model().with_structured_output(schema, method="function_calling")
-    result = await model.ainvoke(messages)
+    handler = _usage.get()
+    result = await model.ainvoke(messages, config={"callbacks": [handler]} if handler else None)
     if result is None:
         raise RuntimeError(f"Model returned no structured output for {schema.__name__}")
     return result  # type: ignore[return-value]

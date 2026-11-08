@@ -8,7 +8,11 @@ export type IconName =
   | "hastag" | "link" | "spinner" | "map-marker" | "expand" | "compress" | "moon" | "sun" | "cursor-finger"
   | "package" | "paperclip-vertical" | "percentage" | "plus" | "disk" | "search" | "shopping-cart" | "table"
   | "target" | "thermometer-half" | "trash" | "truck-side" | "cloud-upload" | "users" | "wind" | "cross-small"
-  | "dashboard";
+  | "dashboard" | "lock" | "globe" | "user" | "sign-out-alt" | "shield-check" | "settings" | "menu-burger" | "download"
+  | "file-pdf" | "copy" | "eye" | "eye-crossed" | "key" | "bell" | "flag" | "user-add" | "folder" | "refresh"
+  | "shield-exclamation" | "shield" | "user-gear" | "time-past" | "envelope" | "id-badge" | "fingerprint" | "books"
+  | "brain" | "bulb" | "comment" | "list" | "angle-small-left" | "info" | "rotate-right" | "user-lock" | "circle-user"
+  | "badge-check" | "book";
 
 export function Icon({ name, size = 16, className = "" }: { name: IconName; size?: number; className?: string }) {
   return (

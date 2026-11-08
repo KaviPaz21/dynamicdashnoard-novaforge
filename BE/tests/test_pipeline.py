@@ -10,13 +10,14 @@ from app.db import store as store_mod
 from app.db.store import MemoryStore
 from app.llm import LLMUnavailable
 from app.schemas import (
-    ActiveFilter, ChatRequest, Dimension, Encoding, Filter, Measure, QuerySpec, SourceDoc,
+    ActiveFilter, ChatRequest, Dimension, Encoding, Filter, Measure, QuerySpec, SourceDoc, UserDoc,
 )
 from app.services import parsers
 from app.services.query_engine import run_query
 from app.services.semantic import load_relationships
 
 SAMPLES = Path(__file__).resolve().parent.parent / "sample_data"
+USER = UserDoc(id="u1", name="Ada Lovelace", email="ada@example.com", password_hash="x")
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +29,7 @@ async def fresh_store(monkeypatch):
 
 async def _ingest(store, filename: str) -> SourceDoc:
     from app.schemas import SourceDoc as S
-    doc = S(id=filename.replace(".", "_"), kind=parsers.detect_kind(filename), filename=filename, name=filename)
+    doc = S(id=filename.replace(".", "_"), kind=parsers.detect_kind(filename), filename=filename, name=filename, owner_id=USER.id)
     await store.upsert("sources", doc.model_dump())
     await ingest_graph.run_ingest(doc.id, filename, (SAMPLES / filename).read_bytes())
     return SourceDoc(**(await store.get("sources", doc.id)))
@@ -184,6 +185,8 @@ async def test_kpi_card_gets_trend_series(fresh_store, monkeypatch):
     exp = await _ingest(fresh_store, "synthetic_combustion_experiments.csv")
 
     async def fake_structured(schema, messages):
+        if schema is chat_graph.DataSelection:
+            return chat_graph.DataSelection(reasoning="needs the table", needs_tabular=True)
         if schema is chat_graph.Route:
             return chat_graph.Route(intent="dashboard", reasoning="r", needs_data_queries=True, needs_kpis=True)
         if schema is chat_graph.WidgetPlan:
@@ -206,7 +209,7 @@ async def test_kpi_card_gets_trend_series(fresh_store, monkeypatch):
         return chat_graph.Synthesis(answer="ok", key_insights=["x"])
 
     monkeypatch.setattr(chat_graph, "structured", fake_structured)
-    out = await chat_graph.get_graph().ainvoke({"request": ChatRequest(message="dash", conversation_id="c")})
+    out = await chat_graph.get_graph().ainvoke({"request": ChatRequest(message="dash", conversation_id="c"), "user": USER})
     kpi, bad, line, insight = out["response"].widgets
     assert [r["date"] for r in kpi.trend_data.rows] == sorted(r["date"] for r in kpi.trend_data.rows)
     assert sum(r["n"] for r in kpi.trend_data.rows) == kpi.data.rows[0]["n"] == 180
@@ -322,6 +325,8 @@ async def test_chat_graph_with_scripted_llm(fresh_store, monkeypatch):
 
     async def fake_structured(schema, messages):
         calls.append(schema.__name__)
+        if schema is chat_graph.DataSelection:
+            return chat_graph.DataSelection(reasoning="needs the table", needs_tabular=True, tabular_source_ids=[exp.id])
         if schema is chat_graph.Route:
             return chat_graph.Route(
                 intent="dashboard", reasoning="build overview", needs_data_queries=True, needs_kpis=True,
@@ -349,8 +354,9 @@ async def test_chat_graph_with_scripted_llm(fresh_store, monkeypatch):
 
     monkeypatch.setattr(chat_graph, "structured", fake_structured)
     req = ChatRequest(message="Give me an overview", conversation_id="c1")
-    out = await chat_graph.get_graph().ainvoke({"request": req})
+    out = await chat_graph.get_graph().ainvoke({"request": req, "user": USER})
     res = out["response"]
+    assert calls.index("DataSelection") < calls.index("Route"), "the data selector runs before the router"
     assert calls.count("WidgetPlan") == 2, "should retry the planner once after a failed query"
     assert res.dashboard_action == "replace" and res.dashboard_title == "Combustion overview"
     types = [w.type for w in res.widgets]
@@ -366,5 +372,5 @@ async def test_no_data_routes_to_general(fresh_store, monkeypatch):
         return chat_graph.Synthesis(answer="Upload a file first")
 
     monkeypatch.setattr(chat_graph, "structured", fake_structured)
-    out = await chat_graph.get_graph().ainvoke({"request": ChatRequest(message="hi")})
+    out = await chat_graph.get_graph().ainvoke({"request": ChatRequest(message="hi"), "user": USER})
     assert out["response"].intent == "general" and not out["response"].widgets

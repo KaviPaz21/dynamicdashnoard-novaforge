@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import uuid
 from typing import Any, Literal, TypedDict
 
@@ -7,7 +8,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
+from app.agents import guard as guard_mod
 from app.agents import prompts
+from app.agents.events import emit
 from app.config import get_settings
 from app.db.store import get_store
 from app.llm import embed_query, structured
@@ -20,12 +23,14 @@ from app.schemas import (
     QuerySpec,
     Relationship,
     SourceDoc,
+    UserDoc,
     Widget,
     WidgetSpec,
     WidgetType,
     SlicerMode,
     Sort,
 )
+from app.services import access
 from app.services.filters import QueryError
 from app.services.query_engine import run_query
 from app.services.semantic import load_relationships
@@ -33,6 +38,17 @@ from app.services.widgets import as_time_series, default_layout, default_slicer_
 
 MAX_ATTEMPTS = 2
 MAX_WIDGETS = 10
+WEAK_MATCH = 0.22  # cosine similarity below which the best passage is considered a poor match
+SCOPE_LABEL = {"all": "local + global", "local": "local only", "global": "global only"}
+
+
+class DataSelection(BaseModel):
+    reasoning: str = Field(description="One sentence for the user: which kind of knowledge is needed and why")
+    needs_tabular: bool = False
+    needs_text: bool = False
+    tabular_source_ids: list[str] = Field(default_factory=list)
+    text_source_ids: list[str] = Field(default_factory=list)
+    doc_query: str | None = None
 
 
 class Route(BaseModel):
@@ -93,12 +109,19 @@ class Synthesis(BaseModel):
     suggestions: list[str] = Field(default_factory=list)
 
 
+class Rewrite(BaseModel):
+    queries: list[str] = Field(description="Two alternative search queries with different wording / vocabulary")
+
+
 class ChatState(TypedDict, total=False):
     request: ChatRequest
+    user: UserDoc
     history: list[dict[str, Any]]
     sources: list[SourceDoc]
     relationships: list[Relationship]
     catalog: str
+    verdict: guard_mod.Verdict
+    selection: DataSelection
     route: Route
     plan: WidgetPlan
     attempts: int
@@ -112,19 +135,27 @@ class ChatState(TypedDict, total=False):
 
 async def load_context(state: ChatState) -> ChatState:
     store = await get_store()
-    req = state["request"]
-    sources = [SourceDoc(**d) for d in await store.list_all("sources")]
+    req, user = state["request"], state["user"]
+    sources = await access.chat_sources(store, user, req.kb_scope, req.attachment_ids)
     sources.sort(key=lambda s: s.created_at)
-    rels = await load_relationships(store)
+    rels = access.visible_relationships(await load_relationships(store), {s.id for s in sources})
     history: list[dict[str, Any]] = []
     if req.conversation_id:
         conv = await store.get("conversations", req.conversation_id)
-        history = (conv or {}).get("messages", [])
+        if conv and conv.get("owner_id") == user.id:
+            history = conv.get("messages", [])
+    ready = [s for s in sources if s.status == "ready"]
+    attached = {s.id for s in ready if s.id in set(req.attachment_ids)}
+    emit(
+        "info", "load_context", "Knowledge in scope",
+        f"{sum(s.kind == 'tabular' for s in ready)} tables · {sum(s.kind == 'text' for s in ready)} documents · "
+        f"{SCOPE_LABEL[req.kb_scope]}" + (f" · {len(attached)} attached to this chat" if attached else ""),
+    )
     return {
         "sources": sources,
         "relationships": rels,
         "history": history,
-        "catalog": prompts.render_catalog(sources, rels),
+        "catalog": prompts.render_catalog(sources, rels, attached),
         "attempts": 0,
         "errors": [],
         "failed": [],
@@ -134,31 +165,103 @@ async def load_context(state: ChatState) -> ChatState:
     }
 
 
-async def route(state: ChatState) -> ChatState:
+async def guard(state: ChatState) -> ChatState:
+    if not get_settings().guard_enabled:
+        return {"verdict": guard_mod.Verdict()}
+    verdict = await guard_mod.check(state["request"].message)
+    if verdict.flagged:
+        emit(
+            "guard", "guard", "Safety check: flagged",
+            f"{', '.join(verdict.categories)} ({verdict.severity})" + (" - request refused" if verdict.blocked else ""),
+        )
+    else:
+        emit("guard", "guard", "Safety check passed")
+    return {"verdict": verdict}
+
+
+def after_guard(state: ChatState) -> str:
+    return "finalize_blocked" if state["verdict"].blocked else "select_data"
+
+
+async def finalize_blocked(state: ChatState) -> ChatState:
+    req = state["request"]
+    return {
+        "response": ChatResponse(
+            conversation_id=req.conversation_id or "", message=guard_mod.REFUSAL, intent="blocked",
+            reasoning=state["verdict"].reason, blocked=True,
+        )
+    }
+
+
+async def select_data(state: ChatState) -> ChatState:
     req, sources = state["request"], state["sources"]
+    ready = [s for s in sources if s.status == "ready"]
+    tabular = {s.id: s for s in ready if s.kind == "tabular"}
+    texts = {s.id: s for s in ready if s.kind == "text"}
+    if not ready:
+        emit("select", "select_data", "Choosing knowledge", "Nothing uploaded yet: answering without data")
+        return {"selection": DataSelection(reasoning="No knowledge available")}
+
+    try:
+        sel = await structured(
+            DataSelection,
+            [
+                SystemMessage(content=prompts.SELECTOR_SYSTEM.format(domain=prompts.domain())),
+                HumanMessage(
+                    content=f"CATALOG\n{state['catalog']}\n\nCONVERSATION SO FAR\n{prompts.render_history(state['history'])}\n\n"
+                    f"USER MESSAGE\n{req.message}"
+                ),
+            ],
+        )
+    except Exception:
+        # No LLM answer: use everything that exists, the router and planner still decide what to do with it
+        sel = DataSelection(
+            reasoning="Selector unavailable: considering every table and document", needs_tabular=bool(tabular),
+            needs_text=bool(texts),
+        )
+    sel.tabular_source_ids = [i for i in sel.tabular_source_ids if i in tabular]
+    sel.text_source_ids = [i for i in sel.text_source_ids if i in texts]
+    sel.needs_tabular = sel.needs_tabular and bool(tabular)
+    sel.needs_text = sel.needs_text and bool(texts)
+    kinds = " + ".join(k for k, on in (("tables", sel.needs_tabular), ("documents", sel.needs_text)) if on) or "no data"
+    picked = [pool[i].name for ids, pool in ((sel.tabular_source_ids, tabular), (sel.text_source_ids, texts)) for i in ids[:4]]
+    emit(
+        "select", "select_data", f"Knowledge needed: {kinds}", sel.reasoning,
+        {"tabular": sel.tabular_source_ids, "text": sel.text_source_ids, "picked": picked},
+    )
+    return {"selection": sel}
+
+
+async def route(state: ChatState) -> ChatState:
+    req, sources, sel = state["request"], state["sources"], state["selection"]
     ready = [s for s in sources if s.status == "ready"]
     tabular = {s.id for s in ready if s.kind == "tabular"}
     texts = {s.id for s in ready if s.kind == "text"}
 
     if not ready:
+        emit("thought", "route", "Understanding your request", "No data uploaded yet, so this is a general question")
         return {"route": Route(intent="general", reasoning="No data uploaded yet")}
 
     msg = [
         SystemMessage(content=prompts.ROUTER_SYSTEM.format(domain=prompts.domain())),
         HumanMessage(
             content=f"CATALOG\n{state['catalog']}\n\nCURRENT DASHBOARD\n{prompts.render_dashboard(req)}\n\n"
-            f"CONVERSATION SO FAR\n{prompts.render_history(state['history'])}\n\nUSER MESSAGE\n{req.message}"
+            f"CONVERSATION SO FAR\n{prompts.render_history(state['history'])}\n\n"
+            f"DATA SELECTION (already decided): tables needed={sel.needs_tabular}, documents needed={sel.needs_text}. {sel.reasoning}\n\n"
+            f"USER MESSAGE\n{req.message}"
         ),
     ]
     r = await structured(Route, msg)
 
-    scope = set(req.source_ids)
-    r.source_ids = [i for i in r.source_ids if i in tabular | texts]
-    if scope:
-        r.source_ids = [i for i in (r.source_ids or list(scope)) if i in scope]
-    r.needs_data_queries = r.needs_data_queries and bool(tabular)
-    r.needs_documents = r.needs_documents and bool(texts)
-    if r.intent in ("dashboard", "modify_dashboard") and r.dashboard_action != "remove" and tabular:
+    builds_dashboard = r.intent in ("dashboard", "modify_dashboard") and r.dashboard_action != "remove"
+    r.needs_data_queries = bool(tabular) and (
+        sel.needs_tabular or builds_dashboard or (r.intent == "data_analysis" and not sel.needs_text)
+    )
+    r.needs_documents = bool(texts) and (sel.needs_text or r.intent == "document_qa")
+    chosen = sel.tabular_source_ids + sel.text_source_ids
+    r.source_ids = [i for i in (chosen or r.source_ids) if i in tabular | texts]
+    r.doc_query = sel.doc_query or r.doc_query
+    if builds_dashboard and tabular:
         r.needs_data_queries = r.needs_kpis = True
     if not r.needs_data_queries:
         r.needs_kpis = False
@@ -168,6 +271,14 @@ async def route(state: ChatState) -> ChatState:
         r.dashboard_action = "none"
     if r.needs_kpis and r.dashboard_action == "none":
         r.dashboard_action = "append" if current else "replace"
+
+    plan_bits = [r.intent.replace("_", " ")]
+    if r.needs_data_queries:
+        plan_bits.append("query tables")
+    if r.needs_documents:
+        plan_bits.append("search documents")
+    plan_bits.append("update the dashboard" if r.needs_kpis else "no dashboard change")
+    emit("thought", "route", "Understanding your request", f"{r.reasoning} → {' · '.join(plan_bits)}")
     return {"route": r}
 
 
@@ -193,6 +304,10 @@ async def plan_widgets(state: ChatState) -> ChatState:
             "\n\nYOUR PREVIOUS PLAN FAILED. Fix these problems and return a corrected full plan:\n- "
             + "\n- ".join(state["errors"])
         )
+        emit(
+            "retry", "plan_widgets", f"Retrying the plan (attempt {state['attempts'] + 1} of {MAX_ATTEMPTS})",
+            "; ".join(state["errors"][:3]), {"errors": state["errors"][:6]},
+        )
     msg = [
         SystemMessage(content=prompts.PLANNER_SYSTEM.format(domain=prompts.domain())),
         HumanMessage(
@@ -204,7 +319,26 @@ async def plan_widgets(state: ChatState) -> ChatState:
     ]
     plan = await structured(WidgetPlan, msg)
     plan.widgets = plan.widgets[:MAX_WIDGETS]
+    emit(
+        "thought", "plan_widgets", "Planned the queries",
+        f"{len(plan.widgets)} visuals and {len(plan.analysis_queries[:4])} analysis queries",
+    )
     return {"plan": plan, "attempts": state["attempts"] + 1}
+
+
+def _describe_query(spec: QuerySpec | None, src: SourceDoc | None) -> str:
+    if spec is None or src is None:
+        return ""
+    parts = [src.name or src.filename]
+    if spec.measures:
+        parts.append(", ".join(f"{m.agg}({m.column or '*'})" for m in spec.measures[:3]))
+    if spec.dimensions:
+        parts.append("by " + ", ".join(d.alias or d.column for d in spec.dimensions[:3]))
+    if spec.select:
+        parts.append("columns " + ", ".join(spec.select[:4]))
+    if spec.filters:
+        parts.append("where " + ", ".join(f"{f.column} {f.op} {f.value}" for f in spec.filters[:3]))
+    return " · ".join(parts)
 
 
 async def _exec(spec: QuerySpec, state: ChatState, by_id: dict[str, SourceDoc]) -> QueryResult:
@@ -213,6 +347,23 @@ async def _exec(spec: QuerySpec, state: ChatState, by_id: dict[str, SourceDoc]) 
         raise QueryError(f"Unknown table id {spec.source_id!r}")
     store = await get_store()
     return await run_query(store, src, spec, state["request"].filters, state["relationships"])
+
+
+async def _timed_query(
+    title: str, spec: QuerySpec, state: ChatState, by_id: dict[str, SourceDoc], node: str = "execute_queries"
+) -> QueryResult:
+    t0 = time.perf_counter()
+    desc = _describe_query(spec, by_id.get(spec.source_id))
+    try:
+        res = await _exec(spec, state, by_id)
+    except Exception as e:
+        emit("query", node, f"Query failed: {title}", f"{desc}\n{e}", {"ok": False})
+        raise
+    emit(
+        "query", node, f"Queried: {title}", f"{desc}\n{res.total_rows:,} rows in {(time.perf_counter() - t0) * 1000:.0f} ms",
+        {"ok": True, "rows": res.total_rows},
+    )
+    return res
 
 
 async def execute_queries(state: ChatState) -> ChatState:
@@ -253,7 +404,7 @@ async def execute_queries(state: ChatState) -> ChatState:
                     raise QueryError("widget has no query")
                 widget.query.source_id = src.id
                 as_time_series(widget, src)
-                widget.data = await _exec(widget.query, state, by_id)
+                widget.data = await _timed_query(pw.title, widget.query, state, by_id)
                 problems = fit_encoding(widget, widget.data, src)
                 if problems:
                     raise QueryError("; ".join(problems))
@@ -274,7 +425,7 @@ async def execute_queries(state: ChatState) -> ChatState:
     analysis: list[dict[str, Any]] = []
     for aq in plan.analysis_queries[:4]:
         try:
-            analysis.append({"purpose": aq.purpose, "result": await _exec(aq.query, state, by_id)})
+            analysis.append({"purpose": aq.purpose, "result": await _timed_query(aq.purpose, aq.query, state, by_id)})
         except Exception as e:
             errors.append(f'analysis query "{aq.purpose}": {e}')
 
@@ -287,20 +438,57 @@ def after_execute(state: ChatState) -> str:
     return "retrieve_docs" if state["route"].needs_documents else "synthesize"
 
 
+async def _search(query: str, ids: list[str], k: int) -> list[dict[str, Any]]:
+    store = await get_store()
+    return await store.vector_search(await embed_query(query), k, ids)
+
+
 async def retrieve_docs(state: ChatState) -> ChatState:
     r, req = state["route"], state["request"]
-    store = await get_store()
     texts = {s.id: s for s in state["sources"] if s.kind == "text" and s.status == "ready"}
     ids = [i for i in r.source_ids if i in texts] or list(texts)
-    vec = await embed_query(r.doc_query or req.message)
-    hits = await store.vector_search(vec, get_settings().rag_top_k, ids)
-    for h in hits:
+    k = get_settings().rag_top_k
+    query = r.doc_query or req.message
+
+    hits = await _search(query, ids, k)
+    best = max((h.get("score") or 0 for h in hits), default=0)
+    emit("retrieval", "retrieve_docs", f"Searched documents: {len(hits)} passages", f'query "{query}" · best match {best:.2f}', {"query": query, "best": round(best, 3)})
+
+    if best < WEAK_MATCH:
+        try:
+            alt = await structured(
+                Rewrite,
+                [
+                    SystemMessage(content="Rewrite a failed document search. Give two alternative queries using different vocabulary and synonyms; keep them self-contained."),
+                    HumanMessage(content=f"Original question: {req.message}\nFailed query: {query}\nAvailable documents:\n{state['catalog']}"),
+                ],
+            )
+            for q in alt.queries[:2]:
+                emit("retry", "retrieve_docs", "Weak match, searching again", f'new query "{q}"', {"query": q})
+                hits += await _search(q, ids, k)
+        except Exception:
+            pass
+
+    unique: dict[str, dict[str, Any]] = {}
+    for h in sorted(hits, key=lambda h: h.get("score") or 0, reverse=True):
+        unique.setdefault(h["id"], h)
+    selected = list(unique.values())[:k]
+    for h in selected:
         h["filename"] = texts[h["source_id"]].filename if h["source_id"] in texts else ""
-    return {"chunks": hits}
+    if selected:
+        emit(
+            "retrieval", "retrieve_docs", f"Selected {len(selected)} passages to read",
+            ", ".join(sorted({h["filename"] for h in selected if h["filename"]})),
+            {"hits": [
+                {"file": h["filename"], "page": h.get("page"), "score": round(h.get("score") or 0, 3), "snippet": h["text"][:160]}
+                for h in selected
+            ]},
+        )
+    return {"chunks": selected}
 
 
 async def synthesize(state: ChatState) -> ChatState:
-    req, r = state["request"], state["route"]
+    req, r, user = state["request"], state["route"], state["user"]
     widgets: list[Widget] = state.get("widgets", [])
     sections: list[str] = []
     for w in widgets:
@@ -323,8 +511,9 @@ async def synthesize(state: ChatState) -> ChatState:
     if r.dashboard_action == "remove":
         notes.append(f"Removed widgets: {', '.join(r.remove_widget_ids)}.")
 
+    emit("thought", "synthesize", "Writing the answer", f"{len(sections)} result sets · {len(chunks)} passages")
     msg = [
-        SystemMessage(content=prompts.SYNTH_SYSTEM.format(domain=prompts.domain())),
+        SystemMessage(content=prompts.SYNTH_SYSTEM.format(domain=prompts.domain(), who=prompts.who(user.name, user.id))),
         HumanMessage(
             content=f"CATALOG\n{state['catalog']}\n\nCONVERSATION SO FAR\n{prompts.render_history(state['history'])}\n\n"
             f"USER MESSAGE\n{req.message}\n\nINTENT: {r.intent} - {r.reasoning}\n\n"
@@ -372,13 +561,19 @@ async def synthesize(state: ChatState) -> ChatState:
 def build_graph():
     g = StateGraph(ChatState)
     g.add_node("load_context", load_context)
+    g.add_node("guard", guard)
+    g.add_node("finalize_blocked", finalize_blocked)
+    g.add_node("select_data", select_data)
     g.add_node("route", route)
     g.add_node("plan_widgets", plan_widgets)
     g.add_node("execute_queries", execute_queries)
     g.add_node("retrieve_docs", retrieve_docs)
     g.add_node("synthesize", synthesize)
     g.set_entry_point("load_context")
-    g.add_edge("load_context", "route")
+    g.add_edge("load_context", "guard")
+    g.add_conditional_edges("guard", after_guard, ["select_data", "finalize_blocked"])
+    g.add_edge("finalize_blocked", END)
+    g.add_edge("select_data", "route")
     g.add_conditional_edges("route", after_route, ["plan_widgets", "retrieve_docs", "synthesize"])
     g.add_edge("plan_widgets", "execute_queries")
     g.add_conditional_edges("execute_queries", after_execute, ["plan_widgets", "retrieve_docs", "synthesize"])

@@ -8,6 +8,7 @@ import { SmokeOrb } from "./SmokeOrb";
 export function ChatWidget() {
   const open = useApp((s) => s.chatOpen);
   const expanded = useApp((s) => s.chatExpanded);
+  const sessionsOpen = useApp((s) => s.sessionsOpen);
   const busy = useApp((s) => s.busy);
   const unread = useApp((s) => s.unread);
   const hasHistory = useApp((s) => s.messages.length > 0);
@@ -27,8 +28,10 @@ export function ChatWidget() {
     return (
       <section
         role="complementary" aria-label="Copilot"
-        className={`chat-dock card-surface relative z-40 flex shrink-0 flex-col overflow-hidden rounded-[22px] max-lg:fixed max-lg:inset-3 max-lg:w-auto ${
-          expanded ? "w-[min(680px,45vw)]" : "w-[min(440px,32vw)] min-w-[360px]"
+        className={`chat-dock card-surface relative z-40 flex shrink-0 flex-col overflow-hidden rounded-[22px] transition-[width] duration-200 max-lg:fixed max-lg:inset-3 max-lg:w-auto ${
+          expanded
+            ? sessionsOpen ? "w-[min(900px,58vw)]" : "w-[min(680px,45vw)]"
+            : sessionsOpen ? "w-[min(660px,46vw)] min-w-[540px]" : "w-[min(440px,32vw)] min-w-[360px]"
         }`}
       >
         <ChatPanel onClose={() => setOpen(false)} expanded={expanded} onToggleExpand={toggleExpanded} />

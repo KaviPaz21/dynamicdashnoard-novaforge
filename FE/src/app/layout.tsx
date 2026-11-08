@@ -9,7 +9,8 @@ const display = Bricolage_Grotesque({
 const body = IBM_Plex_Sans({
   variable: "--font-body",
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
+  weight: ["300", "400", "500", "600", "700"],
+  style: ["normal", "italic"],
 });
 const mono = IBM_Plex_Mono({
   variable: "--font-mono-face",
