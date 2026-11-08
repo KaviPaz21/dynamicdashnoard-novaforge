@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.db.store import get_store
@@ -10,6 +12,7 @@ from app.services.filters import QueryError
 from app.services.query_engine import run_query
 from app.services.semantic import load_relationships
 
+log = logging.getLogger("novaforge.query")
 router = APIRouter(tags=["query"], dependencies=[Depends(current_user)])
 
 
@@ -24,4 +27,5 @@ async def query(req: QueryRequest, user: UserDoc = Depends(current_user)) -> Que
     try:
         return await run_query(store, src, req.spec, slicers, rels, req.exclude_origin)
     except QueryError as e:
-        raise HTTPException(400, str(e)) from e
+        log.info("query rejected: %s", e)  # the specifics (column names...) stay in the server log
+        raise HTTPException(400, "This visual could not be built from the data.") from e

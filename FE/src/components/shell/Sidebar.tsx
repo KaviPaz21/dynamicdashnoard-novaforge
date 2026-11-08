@@ -13,15 +13,6 @@ function relative(iso: string) {
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-function Dot({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <span className="flex items-center gap-2 text-[11px] text-side-ink2" title={label}>
-      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${ok ? "bg-[#7ee0cf]" : "bg-[#ffd27a]"}`} />
-      <span className="truncate font-mono">{label}</span>
-    </span>
-  );
-}
-
 function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("") || "?";
 }
@@ -83,7 +74,6 @@ export function Sidebar() {
   const sourceCount = useApp((s) => s.sources.filter((x) => x.visibility === "private" && !x.conversation_id).length);
   const theme = useApp((s) => s.theme);
   const setTheme = useApp((s) => s.setTheme);
-  const health = useApp((s) => s.health);
   const isAdmin = useAuth((s) => s.user?.role === "admin");
   const openAdmin = useAdmin((s) => s.openAdmin);
   const alerts = useAdmin((s) => s.unreviewed);
@@ -109,7 +99,7 @@ export function Sidebar() {
       aria-label="Navigation"
     >
       <div className={`flex items-center gap-2 px-3 pt-4 pb-3 ${collapsed ? "flex-col" : ""}`}>
-        {collapsed ? <LogoMark /> : <div className="min-w-0 flex-1"><Logo chip size={21} /></div>}
+        {collapsed ? <LogoMark /> : <div className="min-w-0 flex-1"><Logo onDark size={24} /></div>}
         <button
           onClick={toggleSidebar}
           className="rounded-lg p-1.5 text-side-ink2 transition hover:bg-white/15 hover:text-side-ink"
@@ -210,11 +200,11 @@ export function Sidebar() {
           >
             <span className="relative">
               <Icon name="shield-check" size={17} />
-              {collapsed && alerts > 0 && <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-[#ffd27a]" />}
+              {collapsed && alerts > 0 && <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-side-active" />}
             </span>
             {!collapsed && <span className="flex-1">Admin</span>}
             {!collapsed && alerts > 0 && (
-              <span className="tabular rounded-full bg-[#ffd27a] px-1.5 font-mono text-[11px] font-semibold text-[#3a2a00]" title={`${alerts} flagged prompt${alerts === 1 ? "" : "s"} to review`}>
+              <span className="tabular rounded-full bg-side-active px-1.5 font-mono text-[11px] font-semibold text-side-active-ink" title={`${alerts} flagged prompt${alerts === 1 ? "" : "s"} to review`}>
                 {alerts}
               </span>
             )}
@@ -242,24 +232,6 @@ export function Sidebar() {
           </div>
         )}
         <UserCard collapsed={collapsed} />
-        {!collapsed && (
-          <div className="space-y-1 px-1">
-            {health ? (
-              <>
-                <Dot ok={health.store === "cosmos"} label={health.store === "cosmos" ? "Cosmos DB" : "In-memory store"} />
-                <Dot ok={health.llm_configured} label={health.llm_configured ? health.llm_model : "LLM not configured"} />
-              </>
-            ) : (
-              <Dot ok={false} label="API offline" />
-            )}
-            <a
-              href="https://www.flaticon.com/uicons" target="_blank" rel="noreferrer"
-              className="block pt-1 text-[10px] text-side-ink2 underline-offset-2 hover:underline"
-            >
-              Icons by Flaticon UIcons
-            </a>
-          </div>
-        )}
       </div>
     </aside>
   );

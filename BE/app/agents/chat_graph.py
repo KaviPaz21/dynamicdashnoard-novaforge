@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from typing import Any, Literal, TypedDict
@@ -36,6 +37,7 @@ from app.services.query_engine import run_query
 from app.services.semantic import load_relationships
 from app.services.widgets import as_time_series, default_layout, default_slicer_mode, fit_encoding, pack_layout
 
+log = logging.getLogger("novaforge.agent")
 MAX_ATTEMPTS = 2
 MAX_WIDGETS = 10
 WEAK_MATCH = 0.22  # cosine similarity below which the best passage is considered a poor match
@@ -306,7 +308,7 @@ async def plan_widgets(state: ChatState) -> ChatState:
         )
         emit(
             "retry", "plan_widgets", f"Retrying the plan (attempt {state['attempts'] + 1} of {MAX_ATTEMPTS})",
-            "; ".join(state["errors"][:3]), {"errors": state["errors"][:6]},
+            f"{len(state['errors'])} problem(s) found in the first attempt, adjusting the queries", {"issues": len(state["errors"])},
         )
     msg = [
         SystemMessage(content=prompts.PLANNER_SYSTEM.format(domain=prompts.domain())),
@@ -357,7 +359,8 @@ async def _timed_query(
     try:
         res = await _exec(spec, state, by_id)
     except Exception as e:
-        emit("query", node, f"Query failed: {title}", f"{desc}\n{e}", {"ok": False})
+        log.info("query failed (%s): %s", title, e)
+        emit("query", node, f"Query failed: {title}", desc, {"ok": False})
         raise
     emit(
         "query", node, f"Queried: {title}", f"{desc}\n{res.total_rows:,} rows in {(time.perf_counter() - t0) * 1000:.0f} ms",

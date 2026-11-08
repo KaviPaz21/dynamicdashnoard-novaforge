@@ -1,79 +1,85 @@
 @import "tailwindcss";
 
+/* Monochrome: only black, white and greys. Status is told apart by icons and wording, never by hue (KPI cards excepted). */
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #07080b;
-  --panel: #101216;
-  --panel-2: #171a20;
-  --panel-3: #20242c;
-  --line: rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(255, 255, 255, 0.16);
-  --ink: #eceef2;
-  --ink-2: #aeb4c0;
-  --mute: #7a8190;
-  --accent: #78b0d0;
-  --on-accent: #07141c;
-  --good: #12a595;
-  --good-fg: #4fd1c0;
-  --warn: #e0a030;
-  --crit: #e34948;
-  --crit-fg: #ff8a88;
-  --chip-good: rgba(18, 165, 149, 0.2);
-  --chip-good-fg: #4fd1c0;
-  --chip-bad: rgba(227, 73, 72, 0.18);
-  --chip-bad-fg: #ff8a88;
-  --side-from: #1a1d23;
-  --side-to: #111317;
-  --side-ink: #eef1f5;
-  --side-ink-2: rgba(238, 241, 245, 0.68);
-  --side-active: #e8edf2;
-  --side-active-ink: #14181d;
-  --hero-from: #2b3943;
-  --hero-to: #1a232a;
-  --soft: #1b2128;
+  --bg: #0b0b0c;
+  --panel: #141415;
+  --panel-2: #1b1b1d;
+  --panel-3: #262629;
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.18);
+  --ink: #f2f2f3;
+  --ink-2: #b0b0b5;
+  --mute: #7f7f85;
+  --accent: #f2f2f3;
+  --on-accent: #0b0b0c;
+  --good: #d4d4d8;
+  --good-fg: #d4d4d8;
+  --warn: #b0b0b5;
+  --crit: #f2f2f3;
+  --crit-fg: #f2f2f3;
+  --chip-good: rgba(255, 255, 255, 0.12);
+  --chip-good-fg: #e4e4e7;
+  --chip-bad: rgba(255, 255, 255, 0.2);
+  --chip-bad-fg: #ffffff;
+  --side-from: #232325;
+  --side-to: #161617;
+  --side-ink: #f2f2f3;
+  --side-ink-2: rgba(242, 242, 243, 0.62);
+  --side-active: #f2f2f3;
+  --side-active-ink: #0b0b0c;
+  --hero-from: #2a2a2d;
+  --hero-to: #151516;
+  --soft: #202022;
   --glow: transparent;
   --card-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px rgba(0, 0, 0, 0.5);
   --tile-shadow: var(--card-shadow);
   --drag-shadow: 0 14px 40px rgba(0, 0, 0, 0.7);
-  --s1: #3987e5; --s2: #12a595; --s3: #9085e9; --s4: #d55181; --s5: #008300; --s6: #e66767;
+  --s1: #f2f2f3; --s2: #7d7d83; --s3: #bdbdc2; --s4: #4f4f55; --s5: #dcdce0; --s6: #9a9aa0;
+  /* the only coloured elements: KPI cards (icon badge, sparkline, change chip) */
+  --kpi-1: #3987e5; --kpi-2: #12a595; --kpi-3: #9085e9; --kpi-4: #d55181; --kpi-5: #e66767;
+  --kpi-up-bg: rgba(18, 165, 149, 0.2); --kpi-up-fg: #4fd1c0; --kpi-down-bg: rgba(227, 73, 72, 0.18); --kpi-down-fg: #ff8a88;
 }
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #edeff6;
+  --bg: #ededee;
   --panel: #ffffff;
-  --panel-2: #f5f9fa;
-  --panel-3: #e8eef1;
-  --line: rgba(14, 12, 20, 0.07);
-  --line-strong: rgba(14, 12, 20, 0.14);
-  --ink: #0e0c14;
-  --ink-2: #5d656d;
-  --mute: #81858e;
-  --accent: #477b99;
+  --panel-2: #f6f6f7;
+  --panel-3: #e8e8ea;
+  --line: rgba(11, 11, 13, 0.09);
+  --line-strong: rgba(11, 11, 13, 0.18);
+  --ink: #0b0b0d;
+  --ink-2: #55555a;
+  --mute: #85858b;
+  --accent: #0b0b0d;
   --on-accent: #ffffff;
-  --good: #009688;
-  --good-fg: #22674d;
-  --warn: #b87a00;
-  --crit: #d03b3b;
-  --crit-fg: #b3302a;
-  --chip-good: #d9f3e8;
-  --chip-good-fg: #22674d;
-  --chip-bad: #fde9e7;
-  --chip-bad-fg: #b3302a;
-  --side-from: #477b99;
-  --side-to: #4e80a0;
-  --side-ink: #f1ffff;
-  --side-ink-2: rgba(241, 255, 255, 0.78);
-  --side-active: #edeff2;
-  --side-active-ink: #2e4f58;
-  --hero-from: #5d89a1;
-  --hero-to: #43758d;
-  --soft: #c6e1f3;
+  --good: #2b2b2f;
+  --good-fg: #2b2b2f;
+  --warn: #55555a;
+  --crit: #0b0b0d;
+  --crit-fg: #0b0b0d;
+  --chip-good: #e4e4e6;
+  --chip-good-fg: #1c1c20;
+  --chip-bad: #d6d6d9;
+  --chip-bad-fg: #0b0b0d;
+  --side-from: #1b1b1e;
+  --side-to: #0e0e10;
+  --side-ink: #f4f4f5;
+  --side-ink-2: rgba(244, 244, 245, 0.62);
+  --side-active: #f4f4f5;
+  --side-active-ink: #0b0b0d;
+  --hero-from: #2a2a2e;
+  --hero-to: #141416;
+  --soft: #e2e2e4;
   --glow: transparent;
-  --card-shadow: 0 1px 2px rgba(71, 123, 153, 0.08), 0 8px 24px rgba(71, 123, 153, 0.1);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.08);
   --tile-shadow: var(--card-shadow);
-  --drag-shadow: 0 14px 40px rgba(71, 123, 153, 0.28);
-  --s1: #2a78d6; --s2: #009688; --s3: #6250d6; --s4: #e87ba4; --s5: #008300; --s6: #e34948;
+  --drag-shadow: 0 14px 40px rgba(0, 0, 0, 0.25);
+  --s1: #0b0b0d; --s2: #8c8c92; --s3: #4a4a50; --s4: #b8b8be; --s5: #2a2a2e; --s6: #d4d4d8;
+  --kpi-1: #2a78d6; --kpi-2: #009688; --kpi-3: #6250d6; --kpi-4: #e87ba4; --kpi-5: #e34948;
+  --kpi-up-bg: #d9f3e8; --kpi-up-fg: #22674d; --kpi-down-bg: #fde9e7; --kpi-down-fg: #b3302a;
 }
 @theme inline {
   --color-bg: var(--bg);
@@ -257,7 +263,7 @@ div.leaflet-container { background: var(--panel); font-family: var(--font-sans);
   position: relative;
   display: inline-block;
   border-radius: 9999px;
-  box-shadow: 0 6px 18px rgba(79, 109, 240, 0.28), 0 1px 3px rgba(79, 109, 240, 0.18);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.18);
   overflow: hidden;
   animation: orb-float 5s ease-in-out infinite, orb-glow 9s ease-in-out infinite;
 }
@@ -288,9 +294,9 @@ div.leaflet-container { background: var(--panel); font-family: var(--font-sans);
   50% { transform: translateY(-2.5px) scale(1.05); }
 }
 @keyframes orb-glow {
-  0%, 100% { box-shadow: 0 6px 18px rgba(79, 109, 240, 0.32), 0 1px 3px rgba(79, 109, 240, 0.18); }
-  33% { box-shadow: 0 7px 22px rgba(139, 92, 246, 0.38), 0 1px 3px rgba(139, 92, 246, 0.2); }
-  66% { box-shadow: 0 7px 22px rgba(34, 211, 238, 0.34), 0 1px 3px rgba(34, 211, 238, 0.2); }
+  0%, 100% { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32), 0 1px 3px rgba(0, 0, 0, 0.18); }
+  33% { box-shadow: 0 7px 22px rgba(0, 0, 0, 0.38), 0 1px 3px rgba(0, 0, 0, 0.2); }
+  66% { box-shadow: 0 7px 22px rgba(0, 0, 0, 0.34), 0 1px 3px rgba(0, 0, 0, 0.2); }
 }
 @keyframes orb-hue {
   from { filter: hue-rotate(-14deg) saturate(1); }

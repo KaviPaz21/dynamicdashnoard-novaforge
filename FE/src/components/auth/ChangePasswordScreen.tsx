@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { errorText } from "@/lib/api";
 import { Icon } from "@/components/ui/Icon";
 import { useAuth } from "@/store/useAuth";
 import { AuthShell, field, heading, label, primaryBtn, secondaryBtn, subhead } from "./AuthShell";
@@ -33,7 +34,7 @@ export function ChangePasswordScreen() {
     try {
       await changePassword(current, next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not change the password");
+      setError(errorText(err, "Could not change the password"));
     } finally {
       setBusy(false);
     }
@@ -51,16 +52,16 @@ export function ChangePasswordScreen() {
         <div>
           <label htmlFor="new" className={label}>New password</label>
           <input id="new" type="password" autoComplete="new-password" required value={next} onChange={(e) => setNext(e.target.value)} className={field} disabled={busy} aria-describedby="rules" />
-          <p id="rules" className={`mt-1.5 font-mono text-[11px] ${problem ? "text-[#c0332e]" : "text-neutral-500"}`}>
+          <p id="rules" className={`mt-1.5 font-mono text-[11px] ${problem ? "font-semibold text-[#0b0b0d]" : "text-neutral-500"}`}>
             At least 10 characters, with letters and digits.
           </p>
         </div>
         <div>
           <label htmlFor="again" className={label}>Repeat new password</label>
           <input id="again" type="password" autoComplete="new-password" required value={again} onChange={(e) => setAgain(e.target.value)} className={field} disabled={busy} />
-          {mismatch && <p className="mt-1.5 font-mono text-[11px] text-[#c0332e]">{mismatch}</p>}
+          {mismatch && <p className="mt-1.5 font-mono text-[11px] font-semibold text-[#0b0b0d]">{mismatch}</p>}
         </div>
-        <div aria-live="polite" className="min-h-5 font-mono text-xs">{error && <p className="text-[#c0332e]" role="alert">{error}</p>}</div>
+        <div aria-live="polite" className="min-h-5 font-mono text-xs">{error && <p className="font-semibold text-[#0b0b0d]" role="alert">{error}</p>}</div>
         <button type="submit" disabled={busy || !current || !next || !again || !!problem || !!mismatch} className={primaryBtn}>
           {busy ? <span className="inline-flex items-center justify-center gap-2"><Icon name="spinner" size={14} className="animate-spin" /> Saving…</span> : "Save and continue"}
         </button>

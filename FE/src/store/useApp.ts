@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { api, ApiError, type StoredMessage } from "@/lib/api";
+import { api, ApiError, errorText, userMessage, type StoredMessage } from "@/lib/api";
 import type { ThemeName } from "@/lib/palette";
 import type {
   ActiveFilter, ChatResponse, ChatSessionInfo, Citation, Dashboard, Health, KbScope, Layout, Relationship, SheetInfo,
@@ -105,7 +105,7 @@ const newConvId = () => crypto.randomUUID().replaceAll("-", "");
 const EMPTY: Dashboard = { title: "", widgets: [] };
 const AUTO_NAME = /^(sheet|untitled|dashboard)\s*\d*$/i;
 
-const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const errText = (e: unknown) => errorText(e);
 
 function applyResponse(dash: Dashboard, res: ChatResponse): Dashboard {
   let widgets = [...dash.widgets];
@@ -421,10 +421,10 @@ export const useApp = create<AppState>()(
                     : [{ id: t.id, title: t.title, updated_at: new Date().toISOString(), messages: 0 }, ...s.sessions],
                 }));
               } else if (e.event === "final") final = e.data;
-              else if (e.event === "error") failure = e.data.message;
+              else if (e.event === "error") failure = userMessage(e.data.status ?? 500, e.data.message);
             },
           );
-          if (failure || !final) throw new Error(failure ?? "No response from the agent");
+          if (failure || !final) throw new ApiError(failure ?? "The assistant did not respond. Please try again.", 500);
           const res: ChatResponse = final;
 
           const cur = get();

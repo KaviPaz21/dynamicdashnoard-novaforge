@@ -2,6 +2,7 @@
 
 import { Icon } from "@/components/ui/Icon";
 import { useRef, useState } from "react";
+import { errorText } from "@/lib/api";
 import { useApp } from "@/store/useApp";
 
 const ACCEPT = ".csv,.tsv,.xlsx,.xlsm,.xls,.json,.jsonl,.pdf,.txt,.md,.docx";
@@ -24,7 +25,7 @@ export function Dropzone({
       setProblems(rejected.map((r) => `${r.filename}: ${r.error}`));
       onDone?.();
     } catch (e) {
-      setProblems([e instanceof Error ? e.message : String(e)]);
+      setProblems([errorText(e, "Upload failed. Please try again.")]);
     } finally {
       setBusy(false);
       if (input.current) input.current.value = "";

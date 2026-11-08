@@ -3,6 +3,7 @@ export type ThemeName = "light" | "dark";
 export interface Colors {
   ink: { primary: string; secondary: string; muted: string; grid: string; axis: string; surface: string; tooltip: string };
   series: readonly string[];
+  kpi: readonly string[]; // KPI cards are the only coloured visuals
   other: string;
   sequential: readonly string[];
   ordinal: readonly string[];
@@ -17,46 +18,48 @@ export interface Colors {
   onFill: (i: number) => string;
 }
 
-const DARK_INK = "#0e0c14";
+const DARK_INK = "#0b0b0d";
 
 export const COLORS: Record<ThemeName, Colors> = {
   dark: {
     ink: {
-      primary: "#eceef2", secondary: "#aeb4c0", muted: "#7a8190",
-      grid: "#21252d", axis: "#323844", surface: "#101216", tooltip: "#171a20",
+      primary: "#f2f2f3", secondary: "#b0b0b5", muted: "#7f7f85",
+      grid: "#232326", axis: "#38383c", surface: "#141415", tooltip: "#1b1b1d",
     },
-    series: ["#3987e5", "#12a595", "#9085e9", "#d55181", "#008300", "#e66767"],
-    other: "#7a8190",
-    sequential: ["#18232c", "#233a49", "#3a6f8c", "#6fa8c7", "#a7cde0", "#e3f0f7"],
-    ordinal: ["#a7cde0", "#6fa8c7", "#4d8cae", "#3f7c9c", "#2f6784", "#245571"],
-    accent: "#78b0d0",
-    accentFill: "#78b0d0",
-    noData: "#171a20",
-    land: "#1b1f26",
-    border: "#303642",
+    series: ["#f2f2f3", "#7d7d83", "#bdbdc2", "#4f4f55", "#dcdce0", "#9a9aa0"],
+    kpi: ["#3987e5", "#12a595", "#9085e9", "#d55181", "#e66767"],
+    other: "#6a6a70",
+    sequential: ["#1a1a1c", "#2d2d31", "#4a4a50", "#76767c", "#acacb1", "#ececee"],
+    ordinal: ["#ececee", "#c4c4c9", "#9c9ca2", "#7a7a80", "#5c5c62", "#46464b"],
+    accent: "#f2f2f3",
+    accentFill: "#f2f2f3",
+    noData: "#1b1b1d",
+    land: "#1f1f21",
+    border: "#38383c",
     shadow: "rgba(0,0,0,.55)",
     hoverWash: "rgba(255,255,255,0.05)",
     heatLabel: (t) => (t > 0.62 ? DARK_INK : "#ffffff"),
-    onFill: () => "#ffffff",
+    onFill: (i) => (i === 3 ? "#ffffff" : DARK_INK),
   },
   light: {
     ink: {
-      primary: "#0e0c14", secondary: "#5d656d", muted: "#81858e",
-      grid: "#e6ecf1", axis: "#d0dae2", surface: "#ffffff", tooltip: "#ffffff",
+      primary: "#0b0b0d", secondary: "#55555a", muted: "#85858b",
+      grid: "#e6e6e8", axis: "#d2d2d6", surface: "#ffffff", tooltip: "#ffffff",
     },
-    series: ["#2a78d6", "#009688", "#6250d6", "#e87ba4", "#008300", "#e34948"],
-    other: "#8e9aa5",
-    sequential: ["#e8f1f6", "#c6e1f3", "#9cc3d6", "#6fa3bf", "#477b99", "#2c5a75"],
-    ordinal: ["#86b2c9", "#6fa3bf", "#477b99", "#3a6a86", "#2c5a75", "#1f4a63"],
-    accent: "#477b99",
-    accentFill: "#477b99",
-    noData: "#eef3f7",
-    land: "#e4ecf2",
-    border: "#cbd7e0",
-    shadow: "rgba(71,123,153,.22)",
-    hoverWash: "rgba(71,123,153,0.06)",
-    heatLabel: (t) => (t > 0.5 ? "#ffffff" : "#0e0c14"),
-    onFill: (i) => (i === 3 ? DARK_INK : "#ffffff"),
+    series: ["#0b0b0d", "#8c8c92", "#4a4a50", "#b8b8be", "#2a2a2e", "#d4d4d8"],
+    kpi: ["#2a78d6", "#009688", "#6250d6", "#e87ba4", "#e34948"],
+    other: "#a0a0a6",
+    sequential: ["#f1f1f2", "#d9d9dc", "#b4b4b9", "#8a8a90", "#55555b", "#1c1c20"],
+    ordinal: ["#b4b4b9", "#8a8a90", "#6b6b71", "#55555b", "#3a3a3f", "#1c1c20"],
+    accent: "#0b0b0d",
+    accentFill: "#0b0b0d",
+    noData: "#f0f0f1",
+    land: "#e6e6e8",
+    border: "#cfcfd3",
+    shadow: "rgba(0,0,0,.18)",
+    hoverWash: "rgba(0,0,0,0.05)",
+    heatLabel: (t) => (t > 0.5 ? "#ffffff" : "#0b0b0d"),
+    onFill: (i) => (i % 2 === 0 ? "#ffffff" : DARK_INK),
   },
 };
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
+import { starterQuestions } from "@/lib/suggestions";
 import ReactGridLayout, { useContainerWidth, verticalCompactor, type LayoutItem } from "react-grid-layout";
 import type { Widget, WidgetType } from "@/lib/types";
 import { useApp } from "@/store/useApp";
@@ -14,18 +15,12 @@ const MIN_SIZE: Partial<Record<WidgetType, [number, number]>> = {
 };
 const minOf = (t: WidgetType): [number, number] => MIN_SIZE[t] ?? [3, 3];
 
-const STARTERS = [
-  "Build an overview dashboard of all my data",
-  "Rank the conditions by flame speed and explain why",
-  "Which settings lead to flames extinguishing?",
-  "Summarise the key findings in the documents",
-];
-
 function EmptyState() {
   const sources = useApp((s) => s.sources);
   const send = useApp((s) => s.send);
   const busy = useApp((s) => s.busy);
-  const ready = sources.some((s) => s.status === "ready");
+  const ready = sources.some((s) => s.status === "ready" && !s.conversation_id);
+  const starters = useMemo(() => starterQuestions(sources), [sources]);
   return (
     <div className="mx-auto flex max-w-2xl flex-col items-center pt-[7vh] text-center">
       <div className="rise mb-5 rounded-2xl border border-accent/30 bg-accent/10 px-3 py-1 font-mono text-[11px] tracking-[0.2em] text-accent uppercase">
@@ -41,8 +36,8 @@ function EmptyState() {
       </p>
       <div className="rise mt-8 w-full [animation-delay:180ms]">
         {ready ? (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {STARTERS.map((s) => (
+          <div className="grid gap-2 sm:grid-cols-2" aria-label="Suggested questions">
+            {starters.map((s) => (
               <button key={s} disabled={busy} onClick={() => send(s)}
                 className="rounded-xl border border-line bg-panel px-4 py-3 text-left text-sm text-ink2 transition hover:border-accent/50 hover:text-ink disabled:opacity-50">
                 {s}

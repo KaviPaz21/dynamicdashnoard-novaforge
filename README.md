@@ -93,13 +93,13 @@ numeric range / date range), insight.
   autosave shortly after you make them (the Save button shows unsaved / saving / saved). A new
   "build me a dashboard" request opens a new sheet, follow-up edits change the current one. Query results are
   never stored, they are re-queried on open.
-- **Theme:** modelled on the Saaslu reference dashboard, with colours sampled from the image: lavender page
-  (#EDEEF7), white cards with soft shadows, a floating steel-blue sidebar (#477B99 -> #4E80A0), teal (#009688),
-  mint/soft-red change chips and near-black ink (#0E0C14); its orange promo card is deliberately not used. Light is the
-  default; dark is the same steel-blue family on deep teal-navy. UI colours are CSS tokens in
-  `FE/src/app/globals.css`; charts and maps draw on canvas and read the same palette from `FE/src/lib/palette.ts`
-  (keep the two in sync). Chart series use six hues (no orange/yellow) in an order checked for colour-blind
-  separation with the dataviz validator. The choice is remembered and applied before first paint.
+- **Theme:** strictly monochrome: black, white and greys, in a light and a dark variant (no hues anywhere, including
+  charts and maps). UI colours are CSS tokens in `FE/src/app/globals.css`; charts and maps draw on canvas and read the
+  same palette from `FE/src/lib/palette.ts` (keep the two in sync). Because series differ by lightness only, charts rely
+  on labels, legends and tooltips rather than colour alone. The choice is remembered and applied before first paint.
+- **Errors are written for people:** the browser never shows exception text, URLs, setting names or model/database
+  names. `FE/src/lib/api.ts` (`userMessage`) turns API failures into plain sentences, and the backend logs the
+  technical cause instead of returning it. The sidebar no longer shows service status.
 - Each visual can be switched to a related chart type, viewed as a table, focused full screen, or removed.
 - **Maps understand place *names*, not just coordinates.** On upload, a text column is recognised as countries,
   US states or cities from its **values** (whatever it is called: `Origin`, `Hub`, `State`...), and a text column of
@@ -191,5 +191,5 @@ PDF export and the encrypted transport (replay, tamper, clock, session, SSE, mul
   `chunks` container is created.
 
 ## Credits
-- Icons: [Flaticon UIcons](https://www.flaticon.com/uicons) (solid, rounded) via the @flaticon/flaticon-uicons package, used under the Flaticon licence, which requires crediting Flaticon (credited in the app's sidebar).
+- Icons: [Flaticon UIcons](https://www.flaticon.com/uicons) (solid, rounded) via the @flaticon/flaticon-uicons package, used under the Flaticon licence, which requires crediting Flaticon (credited here, not in the app UI).
 - Map shapes: us-atlas and world-atlas (Natural Earth / US Census); place names: GeoNames via geonamescache.

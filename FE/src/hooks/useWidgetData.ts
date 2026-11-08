@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/api";
+import { api, ApiError, errorText } from "@/lib/api";
 import type { QueryResult, QuerySpec, Widget } from "@/lib/types";
 import { useApp } from "@/store/useApp";
 
@@ -39,7 +39,7 @@ export function useWidgetData(widget: Widget, override?: Override): State {
       .query(spec, foreign, widget.id, ctrl.signal)
       .then((data) => setFetched({ key, data, error: null }))
       .catch((e) => {
-        if (!ctrl.signal.aborted) setFetched({ key, data: null, error: e instanceof Error ? e.message : String(e) });
+        if (!ctrl.signal.aborted) setFetched({ key, data: null, error: e instanceof ApiError && e.status === 404 ? "This data is no longer available." : errorText(e, "This visual could not be loaded.") });
       });
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps

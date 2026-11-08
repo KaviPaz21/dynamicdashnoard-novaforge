@@ -2,7 +2,7 @@
 
 import { Icon } from "@/components/ui/Icon";
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, errorText } from "@/lib/api";
 import { formatValue } from "@/lib/format";
 import type { ColumnRole, Row, SourceDoc } from "@/lib/types";
 import { useApp } from "@/store/useApp";
@@ -163,7 +163,7 @@ function Relationships({ scope }: { scope: "private" | "global" }) {
             <span className="rounded bg-ink/5 px-1.5 py-0.5 text-[10px] text-mute uppercase">{r.kind}</span>
             <button className="rounded p-1 text-mute hover:text-crit" aria-label="Remove relationship"
               onClick={async () => {
-                try { await api.saveRelationships(allRels.filter((x) => x.id !== r.id)); } catch (e) { useToasts.getState().push(e instanceof Error ? e.message : "Could not remove the relationship", "error"); }
+                try { await api.saveRelationships(allRels.filter((x) => x.id !== r.id)); } catch (e) { useToasts.getState().push(errorText(e, "Could not remove the relationship"), "error"); }
                 refresh();
               }}>
               <Icon name="trash" size={13} />

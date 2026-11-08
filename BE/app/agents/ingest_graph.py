@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import uuid
 from typing import Any, TypedDict
 
@@ -19,6 +20,9 @@ from app.services.geo import GEO_VERSION
 from app.services.schema_infer import infer_table, to_records
 from app.services.semantic import detect_relationships, load_relationships, save_relationships
 
+log = logging.getLogger("novaforge.ingest")
+# What the person sees when a file can't be processed: the technical cause goes to the server log only
+USER_ERROR = "This file could not be processed. Check that it is a valid, readable file and try again."
 
 class IngestState(TypedDict, total=False):
     source_id: str
@@ -143,9 +147,10 @@ async def profile_tables(state: IngestState) -> IngestState:
             doc.name = profile.title or doc.name
             doc.description = profile.description
         except LLMUnavailable:
-            doc.warnings.append("LLM not configured: descriptions are auto-generated")
+            doc.warnings.append("Descriptions were generated automatically")
         except Exception as e:
-            doc.warnings.append(f"Could not generate an AI description: {str(e)[:200]}")
+            log.warning("description generation failed: %s", e)
+            doc.warnings.append("Descriptions were generated automatically")
         await _save(store, doc)
     return {}
 
@@ -267,11 +272,12 @@ async def run_ingest(source_id: str, filename: str, data: bytes) -> None:
     store = await get_store()
     try:
         await _graph.ainvoke({"source_id": source_id, "filename": filename, "data": data})
-    except Exception as e:
+    except Exception:
+        log.exception("ingesting %s failed", filename)
         raw = await store.get("sources", source_id)
         if raw:
             doc = SourceDoc(**raw)
-            await _save(store, doc, status="failed", stage="failed", error=str(e)[:500])
+            await _save(store, doc, status="failed", stage="failed", error=USER_ERROR)
             # extra sheets of the same workbook that were still being processed
             for d in await store.query("sources", filename=filename, status="processing", owner_id=doc.owner_id):
-                await _save(store, SourceDoc(**d), status="failed", stage="failed", error=str(e)[:500])
+                await _save(store, SourceDoc(**d), status="failed", stage="failed", error=USER_ERROR)

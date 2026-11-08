@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
-import { api } from "@/lib/api";
+import { api, errorText } from "@/lib/api";
 import { fmtDateTime, nf, timeAgo } from "@/lib/time";
 import type { Role, User, UserDetail } from "@/lib/types";
 import { useAuth } from "@/store/useAuth";
@@ -31,7 +31,7 @@ function Detail({ id, onChanged, onDeleted }: { id: string; onChanged: () => voi
 
   // the parent mounts this with key={id}, so switching user starts from a clean state
   const load = useCallback(
-    () => api.admin.user(id).then(setD).catch((e) => push(e instanceof Error ? e.message : "Could not load the user", "error")),
+    () => api.admin.user(id).then(setD).catch((e) => push(errorText(e, "Could not load the user"), "error")),
     [id, push],
   );
 
@@ -44,7 +44,7 @@ function Detail({ id, onChanged, onDeleted }: { id: string; onChanged: () => voi
     try {
       await fn();
     } catch (e) {
-      push(e instanceof Error ? e.message : "Action failed", "error");
+      push(errorText(e, "Action failed"), "error");
     } finally {
       setBusy(null);
     }
@@ -169,7 +169,7 @@ export function ManageUsers() {
   const [q, setQ] = useState("");
 
   const load = useCallback(
-    () => api.admin.users().then(setUsers).catch((e) => push(e instanceof Error ? e.message : "Could not load users", "error")),
+    () => api.admin.users().then(setUsers).catch((e) => push(errorText(e, "Could not load users"), "error")),
     [push],
   );
 

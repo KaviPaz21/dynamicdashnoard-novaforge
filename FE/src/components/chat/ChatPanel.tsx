@@ -1,5 +1,6 @@
 "use client";
 
+import { errorText } from "@/lib/api";
 import { Icon } from "@/components/ui/Icon";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
@@ -212,7 +213,7 @@ export function ChatPanel({ onClose, expanded = false, onToggleExpand }: PanelPr
       const { rejected } = await attach([...list]);
       rejected.forEach((r) => push(`${r.filename}: ${r.error}`, "error"));
     } catch (e) {
-      push(e instanceof Error ? e.message : "Upload failed", "error");
+      push(errorText(e, "Upload failed"), "error");
     } finally {
       setUploading(false);
       if (file.current) file.current.value = "";
@@ -251,9 +252,9 @@ export function ChatPanel({ onClose, expanded = false, onToggleExpand }: PanelPr
 
         <KnowledgeSwitch />
 
-        {health && !health.llm_configured && (
-          <p className="border-b border-warn/30 bg-warn/10 px-4 py-2 text-xs text-warn" role="status">
-            The language model isn&apos;t configured. Set <code className="font-mono">LLM_API_KEY</code> in <code className="font-mono">BE/.env</code> and restart the API.
+        {health && !health.assistant_ready && (
+          <p className="border-b border-line bg-panel2 px-4 py-2 text-xs text-ink2" role="status">
+            The assistant is unavailable right now. Please try again shortly or contact your administrator.
           </p>
         )}
 

@@ -55,8 +55,8 @@ export function ChatWidget() {
         <SmokeOrb busy={busy} size={64} />
         {unread && (
           <span className="absolute top-0 right-0 grid h-3.5 w-3.5 place-items-center" aria-label="New answer">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#22d3ee] opacity-70" />
-            <span className="relative h-3 w-3 rounded-full bg-[#22d3ee] ring-2 ring-bg" />
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ink opacity-70" />
+            <span className="relative h-3 w-3 rounded-full bg-ink ring-2 ring-bg" />
           </span>
         )}
       </button>

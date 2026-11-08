@@ -276,10 +276,7 @@ export interface ChatRequest {
   attachment_ids: string[];
 }
 export interface Health {
-  store: "cosmos" | "memory";
-  llm_configured: boolean;
-  llm_model: string;
-  embeddings_configured: boolean;
+  assistant_ready: boolean;
 }
 export type StreamEvent =
   | { event: "start"; data: { conversation_id: string } }

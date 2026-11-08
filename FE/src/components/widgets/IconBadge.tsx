@@ -11,7 +11,7 @@ const ICONS: Record<IconKey, IconName> = {
   lab: "flask", time: "clock", place: "map-marker", truck: "truck-side", target: "target", count: "hastag",
   activity: "pulse",
 };
-const HUES = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--s6)"];
+const HUES = ["var(--kpi-1)", "var(--kpi-2)", "var(--kpi-3)", "var(--kpi-4)", "var(--kpi-5)"];
 
 export function IconBadge({ widget, size = 30 }: { widget: Widget; size?: number }) {
   const order = useApp((s) => s.dashboard.widgets.filter((w) => w.type === "card").findIndex((w) => w.id === widget.id));

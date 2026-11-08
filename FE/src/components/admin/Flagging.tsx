@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
-import { api } from "@/lib/api";
+import { api, errorText } from "@/lib/api";
 import { fmtDateTime, timeAgo } from "@/lib/time";
 import type { Flag, FlaggedUser } from "@/lib/types";
 import { useAdmin } from "@/store/useAdmin";
@@ -74,7 +74,7 @@ export function Flagging() {
           setUsers(list);
           useAdmin.getState().setUnreviewed(list.reduce((n, u) => n + u.unreviewed, 0));
         })
-        .catch((e) => push(e instanceof Error ? e.message : "Could not load flagged prompts", "error")),
+        .catch((e) => push(errorText(e, "Could not load flagged prompts"), "error")),
     [push],
   );
 
@@ -100,7 +100,7 @@ export function Flagging() {
       setLoaded((l) => (l ? { ...l, list: l.list.map((f) => (f.id === id ? updated : f)) } : l));
       void loadUsers();
     } catch (e) {
-      push(e instanceof Error ? e.message : "Could not update the flag", "error");
+      push(errorText(e, "Could not update the flag"), "error");
     }
   };
 

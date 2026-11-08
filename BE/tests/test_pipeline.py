@@ -45,7 +45,7 @@ async def test_tabular_ingest_infers_schema(fresh_store):
     assert cols["extinguished"].dtype == "boolean"
     assert cols["fuel"].role == "dimension" and "PMMA" in cols["fuel"].top_values or cols["fuel"].top_values
     assert cols["experiment_id"].role == "id"
-    assert any("LLM not configured" in w for w in src.warnings)
+    assert src.warnings == ["Descriptions were generated automatically"], "no model names or exception text in the catalog"
 
 
 async def test_relationships_and_crossfilter(fresh_store):

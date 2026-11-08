@@ -8,6 +8,7 @@ import { useSize } from "@/hooks/useSize";
 import { useWidgetData } from "@/hooks/useWidgetData";
 import { formatValue, num, str } from "@/lib/format";
 import { withAlpha } from "@/lib/palette";
+import { useApp } from "@/store/useApp";
 import type { QueryResult, Widget } from "@/lib/types";
 import { EChart } from "./EChart";
 
@@ -25,6 +26,8 @@ function periodChange(values: (number | null)[]) {
 export function CardWidget({ widget, data }: { widget: Widget; data: QueryResult }) {
   const { ref, w, h } = useSize<HTMLDivElement>();
   const c = useColors();
+  const order = useApp((s) => s.dashboard.widgets.filter((x) => x.type === "card").findIndex((x) => x.id === widget.id));
+  const hue = c.kpi[Math.max(order, 0) % c.kpi.length];
   const trend = useWidgetData(widget, { spec: widget.trend ?? null, initial: widget.trend_data }).data;
 
   const raw = data.rows[0]?.[widget.encoding.value ?? ""];
@@ -57,12 +60,12 @@ export function CardWidget({ widget, data }: { widget: Widget; data: QueryResult
       series: [
         {
           type: "line", data: series.map((p) => p.y), smooth: 0.25, showSymbol: false,
-          lineStyle: { width: 2, color: c.accentFill },
-          areaStyle: { color: { type: "linear", x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: withAlpha(c.accentFill, 0.32) }, { offset: 1, color: withAlpha(c.accentFill, 0) }] } },
+          lineStyle: { width: 2, color: hue },
+          areaStyle: { color: { type: "linear", x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: withAlpha(hue, 0.32) }, { offset: 1, color: withAlpha(hue, 0) }] } },
         },
       ],
     }),
-    [series, widget.options, c],
+    [series, widget.options, c, hue],
   );
 
   const up = change !== null && change > 0.0005;
@@ -87,7 +90,7 @@ export function CardWidget({ widget, data }: { widget: Widget; data: QueryResult
         {change !== null && (
           <div className="mt-2 flex items-center gap-1.5 text-xs">
             <span
-              className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 font-medium ${up ? "bg-chip-good text-chip-good-fg" : down ? "bg-chip-bad text-chip-bad-fg" : "bg-ink/10 text-ink2"}`}
+              className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 font-medium ${up ? "bg-(--kpi-up-bg) text-(--kpi-up-fg)" : down ? "bg-(--kpi-down-bg) text-(--kpi-down-fg)" : "bg-ink/10 text-ink2"}`}
             >
               <Icon name={arrow} size={12} />
               {Math.abs(change * 100).toFixed(Math.abs(change) < 0.1 ? 1 : 0)}%

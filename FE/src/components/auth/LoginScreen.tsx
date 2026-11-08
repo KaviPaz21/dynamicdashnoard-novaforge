@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { errorText } from "@/lib/api";
 import { Icon } from "@/components/ui/Icon";
 import { useAuth } from "@/store/useAuth";
 import { AuthShell, field, heading, label, primaryBtn, subhead } from "./AuthShell";
@@ -22,7 +23,7 @@ export function LoginScreen() {
     try {
       await login(email.trim(), password);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign-in failed");
+      setError(errorText(err, "Sign-in failed"));
       setPassword("");
     } finally {
       setBusy(false);
@@ -59,7 +60,7 @@ export function LoginScreen() {
         </div>
 
         <div aria-live="polite" className="min-h-5 font-mono text-xs">
-          {error && <p className="text-[#c0332e]" role="alert">{error}</p>}
+          {error && <p className="font-semibold text-[#0b0b0d]" role="alert">{error}</p>}
           {!error && notice && <p className="text-neutral-600">{notice}</p>}
         </div>
 

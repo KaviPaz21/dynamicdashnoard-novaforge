@@ -58,14 +58,8 @@ def create_app() -> FastAPI:
 
     @app.get(f"{s.api_prefix}/system")
     async def system(_: UserDoc = Depends(current_user)) -> dict:
-        store = await get_store()
-        cfg = get_settings()
-        return {
-            "store": store.backend,
-            "llm_configured": cfg.llm_configured,
-            "llm_model": cfg.llm_model,
-            "embeddings_configured": cfg.embeddings_configured,
-        }
+        cfg = get_settings()  # only whether the assistant can answer: no model, database or deployment details
+        return {"assistant_ready": cfg.llm_configured}
 
     for r in (secure.router, auth.router, admin.router, sources.router, query.router, chat.router, dashboards.router, geo.router):
         app.include_router(r, prefix=s.api_prefix)

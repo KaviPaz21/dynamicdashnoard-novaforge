@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { Icon } from "@/components/ui/Icon";
-import { api } from "@/lib/api";
+import { api, errorText } from "@/lib/api";
 import type { Role, User } from "@/lib/types";
 import { useToasts } from "@/store/useToasts";
 
@@ -53,7 +53,7 @@ export function AddUsers() {
       setEmail("");
       setRole("client");
     } catch (err) {
-      push(err instanceof Error ? err.message : "Could not create the user", "error");
+      push(errorText(err, "Could not create the user"), "error");
     } finally {
       setBusy(false);
     }

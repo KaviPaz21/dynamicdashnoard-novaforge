@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import uuid
 from typing import Any, AsyncIterator
@@ -18,6 +19,7 @@ from app.security.deps import current_user
 from app.services import access, flags, users
 from app.services.titles import fallback_title, make_title
 
+log = logging.getLogger("novaforge.chat")
 router = APIRouter(tags=["chat"], dependencies=[Depends(current_user)])
 
 CONV_ID = re.compile(r"^[0-9a-f]{32}$")
@@ -102,10 +104,12 @@ async def _events(req: ChatRequest, user: UserDoc, conv: dict[str, Any] | None) 
         if title:
             yield "title", {"id": conv_id, "title": conv["title"]}
         yield "final", final.model_dump()
-    except LLMUnavailable as e:
-        yield "error", {"message": str(e), "status": 503}
-    except Exception as e:
-        yield "error", {"message": f"{type(e).__name__}: {e}", "status": 500}
+    except LLMUnavailable:
+        log.exception("assistant unavailable")
+        yield "error", {"message": "The assistant is unavailable right now. Please try again shortly.", "status": 503}
+    except Exception:
+        log.exception("chat failed")
+        yield "error", {"message": "Something went wrong while answering. Please try again.", "status": 500}
     finally:
         if title_task and not title_task.done():
             title_task.cancel()
